@@ -18,8 +18,14 @@ const nextConfig = {
       transform: 'react-icons/{{member}}',
     },
   },
-  // Exclude Sharp from bundling (native module)
-  serverComponentsExternalPackages: ['sharp'],
+  // Webpack config to handle Sharp (native module)
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Externalize Sharp to avoid bundling issues
+      config.externals = [...config.externals, 'sharp']
+    }
+    return config
+  },
 }
 
 module.exports = nextConfig
