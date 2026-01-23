@@ -18,6 +18,8 @@ const nextConfig = {
       transform: 'react-icons/{{member}}',
     },
   },
+  // Exclude Sharp from bundling (native module)
+  serverComponentsExternalPackages: ['sharp'],
 }
 
 module.exports = nextConfig
