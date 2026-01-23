@@ -3,8 +3,6 @@ const nextConfig = {
   images: {
     domains: ['your-supabase-project.supabase.co'],
   },
-  // Speed up compilation and reduce memory usage
-  swcMinify: true,
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
