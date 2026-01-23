@@ -11,6 +11,7 @@ const nextConfig = {
   // Faster builds
   experimental: {
     optimizePackageImports: ['qrcode'],
+    serverComponentsExternalPackages: ['sharp'],
   },
   // Reduce initial load time
   modularizeImports: {
