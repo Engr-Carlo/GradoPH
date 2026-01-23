@@ -11,7 +11,7 @@
  * - Answers: 5 options per question (A-E)
  */
 
-import { Jimp } from 'jimp'
+import Jimp from 'jimp'
 
 // Template layout constants
 const TEMPLATE = {
