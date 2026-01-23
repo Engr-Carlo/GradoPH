@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
-// import { processOMRImage } from '@/lib/omr-processor' // TODO: Enable when Python OMR service is ready
+import { processWithSharp } from '@/lib/sharp-omr-processor'
 
 /**
  * POST /api/scans/process
@@ -95,36 +95,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Load OpenCV.js dynamically (for server-side processing)
-    // Note: OpenCV.js doesn't work well in Node.js - use Python microservice for production
-    // For now, we use demo mode that accepts student_id from request or generates test data
-    
     console.log('Processing scan for exam:', exam.name, 'Questions:', numQuestions)
     
-    // Demo mode: Generate realistic test results
-    // In production, replace this with a call to Python OMR service
-    const processingResult = {
-      success: true,
-      confidence: 75 + Math.floor(Math.random() * 20), // 75-95% confidence
-      student_id: {
-        // Use provided student_id or generate a test one
-        student_id: student_id || generateTestStudentId(studentIdLength),
-        confidence: 85 + Math.floor(Math.random() * 10)
-      },
-      answers: Array.from({ length: numQuestions }, (_, i) => ({
-        question_number: i + 1,
-        // Generate random answers for demo
-        detected_answers: [['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)]],
-        confidence: 70 + Math.floor(Math.random() * 25),
-        filled_percentage: 60 + Math.floor(Math.random() * 35)
-      })),
-      metadata: {
-        exam_id: exam.id,
-        exam_name: exam.name,
-        num_questions: numQuestions,
-        processing_mode: 'demo' // Flag that this is demo mode
+    // Process the image using Sharp-based OMR processor
+    const imageBuffer = await imageData.arrayBuffer()
+    const processingResult = await processWithSharp(
+      Buffer.from(imageBuffer),
+      numQuestions,
+      studentIdLength,
+      bubble_threshold || 0.4  // Default 40% threshold
+    )
+    
+    // If OMR failed, use provided student_id or generate fallback
+    if (!processingResult.success || processingResult.student_id.confidence < 30) {
+      console.log('OMR low confidence, using fallback student_id:', student_id)
+      if (student_id) {
+        processingResult.student_id.student_id = student_id
+        processingResult.student_id.confidence = 80  // Manual input
       }
     }
+    
+    // Add exam metadata to result
+    processingResult.metadata = {
+      ...processingResult.metadata,
+      exam_id: exam.id,
+      exam_name: exam.name,
+      num_questions: numQuestions
+    } as any
 
     // Calculate score against answer key
     let score = 0
@@ -168,7 +165,7 @@ export async function POST(request: NextRequest) {
       student_id: processingResult.student_id.student_id,
       answers: processingResult.answers,
       metadata: processingResult.metadata,
-      message: 'Scan processed (demo mode - real OMR coming soon)'
+      message: 'Scan processed successfully with Sharp OMR'
     })
   } catch (error) {
     console.error('API Error:', error)

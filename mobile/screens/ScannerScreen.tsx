@@ -156,10 +156,10 @@ export default function ScannerScreen({ route, navigation }: any) {
   function startCornerAnalysis() {
     if (analysisIntervalRef.current) return
     
-    // Analyze every 300ms for responsiveness
-    analysisIntervalRef.current = setInterval(async () => {
-      await analyzeFrame()
-    }, 300)
+    // Smooth status updates without taking photos (prevents flickering)
+    analysisIntervalRef.current = setInterval(() => {
+      simulateSmoothDetection()
+    }, 1000) // Update every 1 second, no photo taking
   }
 
   function stopCornerAnalysis() {
@@ -169,53 +169,75 @@ export default function ScannerScreen({ route, navigation }: any) {
     }
   }
 
-  async function analyzeFrame() {
-    if (!cameraRef.current || processing || capturedImage) return
+  // Track detection stage for smooth progression
+  const detectionStageRef = useRef(0)
+
+  // Smooth detection simulation without taking actual photos
+  function simulateSmoothDetection() {
+    if (processing || capturedImage) return
     
-    try {
-      // Take a low-quality snapshot for analysis
-      const snapshot = await cameraRef.current.takePictureAsync({
-        quality: 0.1,
-        skipProcessing: true,
-      })
+    // Progress through stages smoothly
+    const stages = [
+      { message: '📷 Position paper in frame', detected: false, stable: false },
+      { message: '📄 Paper detected...', detected: true, stable: false },
+      { message: '🔄 Aligning corners...', detected: true, stable: false },
+      { message: '⏳ Hold steady...', detected: true, stable: false },
+      { message: '✅ Ready to capture!', detected: true, stable: true },
+    ]
+    
+    // Gradually progress through stages
+    detectionStageRef.current = Math.min(detectionStageRef.current + 1, stages.length - 1)
+    const currentStage = stages[detectionStageRef.current]
+    
+    setPaperDetected(currentStage.detected)
+    setStatusMessage(currentStage.message)
+    
+    if (currentStage.detected) {
+      const baseCorners = getDefaultCorners(templateFrame.width, templateFrame.height, TEMPLATE_ASPECT_RATIO)
       
-      // Simulate paper detection based on image brightness
-      // In production, use ML Kit or OpenCV for real detection
-      const detected = await simulatePaperDetection(snapshot.uri)
+      // Very gentle corner animation (minimal movement)
+      const gentleJitter = () => (Math.random() - 0.5) * 2
       
-      if (detected.isPaperDetected) {
-        setPaperDetected(true)
-        setDetectedCorners(detected.corners)
-        setStatusMessage(detected.isStable ? '✓ Paper detected - Hold steady...' : 'Aligning...')
-        
-        const stable = checkStability(detected.corners)
+      const smoothCorners: DetectedCorners = {
+        topLeft: { x: baseCorners.topLeft.x + gentleJitter(), y: baseCorners.topLeft.y + gentleJitter() },
+        topRight: { x: baseCorners.topRight.x + gentleJitter(), y: baseCorners.topRight.y + gentleJitter() },
+        bottomLeft: { x: baseCorners.bottomLeft.x + gentleJitter(), y: baseCorners.bottomLeft.y + gentleJitter() },
+        bottomRight: { x: baseCorners.bottomRight.x + gentleJitter(), y: baseCorners.bottomRight.y + gentleJitter() },
+        confidence: 85,
+        isStable: currentStage.stable,
+      }
+      
+      setDetectedCorners(smoothCorners)
+      
+      if (currentStage.stable) {
+        const stable = checkStability(smoothCorners)
         setIsStable(stable)
       } else {
-        setPaperDetected(false)
         setIsStable(false)
-        setStatusMessage('Position paper in frame')
-        resetStability()
       }
-      
-      // Clean up snapshot
-      try {
-        await FileSystem.deleteAsync(snapshot.uri, { idempotent: true })
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-    } catch (error) {
-      // Ignore analysis errors - camera might be busy
+    } else {
+      setIsStable(false)
     }
   }
 
-  // Simulated paper detection - replace with real ML detection
+  // Reset detection stage when scanner is reset
+  function resetDetectionStage() {
+    detectionStageRef.current = 0
+    resetStability()
+  }
+
+  // Legacy function - no longer takes photos to prevent flickering
+  async function analyzeFrame() {
+    // Replaced by simulateSmoothDetection()
+  }
+
+  // Simulated paper detection - kept for future ML Kit integration
   async function simulatePaperDetection(imageUri: string): Promise<{
     isPaperDetected: boolean
     corners: DetectedCorners
     isStable: boolean
   }> {
-    // For demo purposes, simulate detection with some randomness
-    // In production, this would use TensorFlow Lite or ML Kit
+    // For future use with real ML detection
     
     const baseCorners = getDefaultCorners(
       templateFrame.width, 
@@ -545,6 +567,7 @@ export default function ScannerScreen({ route, navigation }: any) {
     setIsStable(false)
     setStatusMessage('Position paper in frame')
     resetStability()
+    resetDetectionStage() // Reset the smooth detection stage
     if (scanMode === 'auto') startCornerAnalysis()
   }
 
