@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -32,7 +32,7 @@ interface Exam {
   }
 }
 
-export default function ResultsPage() {
+function ResultsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const examId = searchParams.get('exam_id')
@@ -461,5 +461,13 @@ export default function ResultsPage() {
         )}
       </main>
     </div>
+  )
+}
+
+export default function ResultsPage() {
+  return (
+    <Suspense fallback={<div className="p-8">Loading results...</div>}>
+      <ResultsContent />
+    </Suspense>
   )
 }
