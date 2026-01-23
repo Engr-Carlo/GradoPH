@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
-import { processWithJimp } from '@/lib/jimp-omr-processor'
+import { processWithSharp } from '@/lib/sharp-omr-processor'
 
 /**
  * POST /api/scans/process
@@ -97,9 +97,9 @@ export async function POST(request: NextRequest) {
 
     console.log('Processing scan for exam:', exam.name, 'Questions:', numQuestions)
     
-    // Process the image using Jimp-based OMR processor (pure JS, no native deps)
+    // Process the image using Sharp-based OMR processor
     const imageBuffer = await imageData.arrayBuffer()
-    const processingResult = await processWithJimp(
+    const processingResult = await processWithSharp(
       Buffer.from(imageBuffer),
       numQuestions,
       studentIdLength,
@@ -131,17 +131,63 @@ export async function POST(request: NextRequest) {
       ).length
     }
 
-    // Save scan to database
+    // Check if this student has already been scanned for this exam
+    const { data: existingScan } = await supabase
+      .from('scans')
+      .select('id')
+      .eq('exam_id', exam.id)
+      .eq('student_id', processingResult.student_id.student_id)
+      .single()
+
+    if (existingScan) {
+      // Update existing scan instead of creating duplicate
+      const { data: updatedScan, error: updateError } = await supabase
+        .from('scans')
+        .update({
+          answers_json: processingResult.answers.map(a => a.detected_answers[0] || null),
+          confidence: processingResult.confidence,
+          image_path: image_path,
+          score: score
+        })
+        .eq('id', existingScan.id)
+        .select()
+        .single()
+
+      if (updateError) {
+        console.error('Error updating scan:', updateError)
+        return NextResponse.json(
+          { error: 'Failed to update scan results', details: updateError.message },
+          { status: 500 }
+        )
+      }
+
+      console.log('Scan updated:', updatedScan.id, 'Score:', score, '/', numQuestions)
+
+      return NextResponse.json({
+        success: true,
+        scan_id: updatedScan.id,
+        score: score,
+        total_questions: numQuestions,
+        confidence: processingResult.confidence,
+        student_id: processingResult.student_id.student_id,
+        answers: processingResult.answers,
+        metadata: processingResult.metadata,
+        message: 'Scan updated (student already scanned)'
+      })
+    }
+
+    // Save new scan to database
     const { data: scan, error: insertError } = await supabase
       .from('scans')
       .insert({
         exam_id: exam.id,
         student_id: processingResult.student_id.student_id,
-        answers_json: processingResult.answers.map(a => a.detected_answers[0]),
+        answers_json: processingResult.answers.map(a => a.detected_answers[0] || null),
         confidence: processingResult.confidence,
         image_path: image_path,
         scanned_by: session.user.id,
-        score: score
+        score: score,
+        is_unknown_student: false
       })
       .select()
       .single()
@@ -149,7 +195,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       console.error('Error saving scan:', insertError)
       return NextResponse.json(
-        { error: 'Failed to save scan results', details: insertError.message },
+        { error: 'Failed to save scan results', details: insertError.message, code: insertError.code },
         { status: 500 }
       )
     }

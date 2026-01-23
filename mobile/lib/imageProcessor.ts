@@ -3,7 +3,7 @@
  * Handles perspective transform and image cropping for scanned papers
  */
 
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator'
+import { manipulateAsync, SaveFormat, FlipType } from 'expo-image-manipulator'
 import { Point, DetectedCorners } from './cornerDetection'
 
 export interface CropResult {
@@ -14,8 +14,7 @@ export interface CropResult {
 
 /**
  * Crop and transform image based on detected corners
- * Since React Native doesn't have native perspective transform,
- * we use a simplified crop-to-bounds approach
+ * Handles orientation correction and perspective normalization
  */
 export async function cropToCorners(
   imageUri: string,
@@ -38,30 +37,43 @@ export async function cropToCorners(
   const cropHeight = Math.min(imageHeight - cropY, Math.ceil(maxY - minY))
   
   try {
+    // Determine if the image is in landscape orientation (wider than tall)
+    const isLandscape = cropWidth > cropHeight * 1.2
+    
+    // Build manipulation actions
+    const actions: any[] = []
+    
     // First crop to the bounding box
-    const cropped = await manipulateAsync(
+    actions.push({
+      crop: {
+        originX: cropX,
+        originY: cropY,
+        width: cropWidth,
+        height: cropHeight,
+      },
+    })
+    
+    // If landscape, rotate to portrait
+    if (isLandscape) {
+      actions.push({ rotate: -90 })
+    }
+    
+    // Resize to target dimensions (portrait 850x1100)
+    actions.push({
+      resize: {
+        width: targetWidth,
+        height: targetHeight,
+      },
+    })
+    
+    const result = await manipulateAsync(
       imageUri,
-      [
-        {
-          crop: {
-            originX: cropX,
-            originY: cropY,
-            width: cropWidth,
-            height: cropHeight,
-          },
-        },
-        {
-          resize: {
-            width: targetWidth,
-            height: targetHeight,
-          },
-        },
-      ],
+      actions,
       { format: SaveFormat.JPEG, compress: 0.9 }
     )
     
     return {
-      uri: cropped.uri,
+      uri: result.uri,
       width: targetWidth,
       height: targetHeight,
     }

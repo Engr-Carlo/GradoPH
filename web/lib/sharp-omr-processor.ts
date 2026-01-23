@@ -1,8 +1,8 @@
 /**
- * OMR (Optical Mark Recognition) Processor using Jimp
+ * OMR (Optical Mark Recognition) Processor using Sharp
  * 
- * Pure JavaScript image processing - no native modules.
- * Works perfectly on Vercel serverless functions.
+ * High-performance image processing for bubble sheet scanning.
+ * Works on Vercel with Next.js 15.1.11+.
  * 
  * Template specifications:
  * - Image size: 850 x 1100 pixels
@@ -11,7 +11,7 @@
  * - Answers: 5 options per question (A-E)
  */
 
-import Jimp from 'jimp'
+import sharp from 'sharp'
 
 // Template layout constants
 const TEMPLATE = {
@@ -34,7 +34,7 @@ const TEMPLATE = {
   bubbleSpacingY: 30,
 }
 
-export interface JimpOMRResult {
+export interface SharpOMRResult {
   success: boolean
   confidence: number
   student_id: {
@@ -55,14 +55,14 @@ export interface JimpOMRResult {
 }
 
 /**
- * Main OMR processing function using Jimp
+ * Main OMR processing function using Sharp
  */
-export async function processWithJimp(
+export async function processWithSharp(
   imageData: Buffer | ArrayBuffer | Blob,
   numQuestions: number,
   studentIdLength: number = 10,
-  bubbleThreshold: number = 0.35  // 35% filled = marked
-): Promise<JimpOMRResult> {
+  bubbleThreshold: number = 0.35
+): Promise<SharpOMRResult> {
   try {
     // Convert input to Buffer
     let buffer: Buffer
@@ -75,29 +75,33 @@ export async function processWithJimp(
       buffer = imageData
     }
 
-    // Load image with Jimp
-    const image = await Jimp.read(buffer)
-    const originalWidth = image.getWidth()
-    const originalHeight = image.getHeight()
+    // Get original image metadata
+    const metadata = await sharp(buffer).metadata()
+    const originalWidth = metadata.width || 0
+    const originalHeight = metadata.height || 0
 
     console.log(`Processing image: ${originalWidth}x${originalHeight}`)
 
     // Resize to template size and convert to grayscale
-    image
-      .resize(TEMPLATE.width, TEMPLATE.height)
+    const { data: pixelData, info } = await sharp(buffer)
+      .resize(TEMPLATE.width, TEMPLATE.height, { fit: 'fill' })
       .grayscale()
-      .contrast(0.2)  // Improve contrast
+      .normalize()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
 
     // Extract student ID
     const studentIdResult = extractStudentId(
-      image,
+      pixelData,
+      info.width,
       studentIdLength,
       bubbleThreshold
     )
 
     // Extract answers
     const answersResult = extractAnswers(
-      image,
+      pixelData,
+      info.width,
       numQuestions,
       bubbleThreshold
     )
@@ -120,7 +124,7 @@ export async function processWithJimp(
       student_id: studentIdResult,
       answers: answersResult,
       metadata: {
-        processing_mode: 'jimp-omr',
+        processing_mode: 'sharp-omr',
         image_dimensions: { 
           width: originalWidth, 
           height: originalHeight 
@@ -128,7 +132,7 @@ export async function processWithJimp(
       }
     }
   } catch (error) {
-    console.error('Jimp OMR Processing error:', error)
+    console.error('Sharp OMR Processing error:', error)
 
     // Return fallback result
     return {
@@ -156,7 +160,8 @@ export async function processWithJimp(
  * Extract student ID from bubble grid
  */
 function extractStudentId(
-  image: Jimp,
+  pixelData: Buffer,
+  width: number,
   idLength: number,
   threshold: number
 ): { student_id: string; confidence: number } {
@@ -167,13 +172,13 @@ function extractStudentId(
     let bestDigit = '0'
     let bestFillRatio = 0
 
-    // Check each digit (0-9) in this column
     for (let digit = 0; digit <= 9; digit++) {
       const bubbleX = TEMPLATE.studentIdStartX + (col * TEMPLATE.bubbleSpacingX)
       const bubbleY = TEMPLATE.studentIdStartY + (digit * TEMPLATE.bubbleSpacingY)
 
       const fillRatio = getBubbleFillRatio(
-        image,
+        pixelData,
+        width,
         bubbleX,
         bubbleY,
         TEMPLATE.bubbleWidth,
@@ -186,7 +191,6 @@ function extractStudentId(
       }
     }
 
-    // Accept if above threshold
     if (bestFillRatio >= threshold) {
       digits.push(bestDigit)
       totalConfidence += Math.min(bestFillRatio * 150, 100)
@@ -209,7 +213,8 @@ function extractStudentId(
  * Extract answers from bubble grid
  */
 function extractAnswers(
-  image: Jimp,
+  pixelData: Buffer,
+  width: number,
   numQuestions: number,
   threshold: number
 ): {
@@ -236,7 +241,6 @@ function extractAnswers(
     const fillRatios: number[] = []
     let maxFillRatio = 0
 
-    // Check each option (A-E)
     for (let opt = 0; opt < 5; opt++) {
       const bubbleX = TEMPLATE.answersStartX + 
                       (col * (5 * TEMPLATE.bubbleSpacingX + 50)) +
@@ -244,7 +248,8 @@ function extractAnswers(
       const bubbleY = TEMPLATE.answersStartY + (row * TEMPLATE.bubbleSpacingY)
 
       const fillRatio = getBubbleFillRatio(
-        image,
+        pixelData,
+        width,
         bubbleX,
         bubbleY,
         TEMPLATE.bubbleWidth,
@@ -261,7 +266,6 @@ function extractAnswers(
       }
     }
 
-    // If no answer clearly detected, pick the best one if close to threshold
     if (detectedAnswers.length === 0) {
       const maxRatio = Math.max(...fillRatios)
       if (maxRatio >= threshold * 0.6) {
@@ -283,37 +287,28 @@ function extractAnswers(
 }
 
 /**
- * Calculate how "filled" a bubble region is using Jimp
+ * Calculate bubble fill ratio from raw pixel data
  */
 function getBubbleFillRatio(
-  image: Jimp,
+  pixelData: Buffer,
+  width: number,
   x: number,
   y: number,
-  width: number,
-  height: number
+  bubbleWidth: number,
+  bubbleHeight: number
 ): number {
   let darkPixels = 0
   let totalPixels = 0
 
-  const imgWidth = image.getWidth()
-  const imgHeight = image.getHeight()
-
-  // Sample pixels within the bubble region
-  for (let py = Math.floor(y); py < Math.floor(y + height); py++) {
-    for (let px = Math.floor(x); px < Math.floor(x + width); px++) {
-      // Bounds check
-      if (px >= 0 && px < imgWidth && py >= 0 && py < imgHeight) {
-        try {
-          const color = Jimp.intToRGBA(image.getPixelColor(px, py))
-          // Grayscale: use red channel (all channels are same after grayscale)
-          // Consider pixels below 100 as "dark" (filled)
-          if (color.r < 100) {
-            darkPixels++
-          }
-          totalPixels++
-        } catch {
-          // Ignore pixel read errors
+  for (let py = Math.floor(y); py < Math.floor(y + bubbleHeight); py++) {
+    for (let px = Math.floor(x); px < Math.floor(x + bubbleWidth); px++) {
+      const pixelIndex = py * width + px
+      if (pixelIndex >= 0 && pixelIndex < pixelData.length) {
+        // Grayscale: 0 = black, 255 = white
+        if (pixelData[pixelIndex] < 100) {
+          darkPixels++
         }
+        totalPixels++
       }
     }
   }
