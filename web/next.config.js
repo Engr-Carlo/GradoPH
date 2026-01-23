@@ -12,6 +12,13 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['qrcode'],
     serverComponentsExternalPackages: ['sharp'],
+    // Skip tracing Sharp to avoid stack overflow
+    outputFileTracingExcludes: {
+      '*': [
+        'node_modules/sharp/**/*',
+        'node_modules/@img/**/*',
+      ],
+    },
   },
   // Reduce initial load time
   modularizeImports: {
