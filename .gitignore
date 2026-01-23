@@ -1,0 +1,60 @@
+# GradoPH Monorepo .gitignore
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Flutter/Dart
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/build/
+mobile/pubspec.lock
+mobile/.idea/
+mobile/*.iml
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/release/
+mobile/ios/Flutter/.last_build_id
+mobile/ios/Pods/
+
+# Next.js
+web/.next/
+web/out/
+web/dist/
+web/build/
+
+# Testing
+coverage/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supabase
+.supabase/
+
+# Build outputs
+*.apk
+*.aab
+*.ipa
+
+# Secrets
+*.key
+*.pem
+keystore.jks

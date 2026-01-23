@@ -1,0 +1,25 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "lib": ["esnext", "dom"],
+    "types": [
+      "react",
+      "react-native",
+      "expo"
+    ]
+  },
+  "exclude": [
+    "node_modules"
+  ],
+  "include": [
+    "App.tsx",
+    "index.ts",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "screens/**/*.ts",
+    "screens/**/*.tsx"
+  ]
+}
