@@ -1,9 +1,8 @@
 /**
- * OMR (Optical Mark Recognition) Processor using Sharp
+ * OMR (Optical Mark Recognition) Processor using Jimp
  * 
- * Node.js-compatible OMR solution using Sharp for image processing.
- * OpenCV.js doesn't work well in serverless/Node.js environments,
- * so this provides a reliable alternative.
+ * Pure JavaScript image processing - no native modules.
+ * Works perfectly on Vercel serverless functions.
  * 
  * Template specifications:
  * - Image size: 850 x 1100 pixels
@@ -12,31 +11,30 @@
  * - Answers: 5 options per question (A-E)
  */
 
-import sharp from 'sharp'
+import Jimp from 'jimp'
 
-// Template layout constants (matching the template generator)
+// Template layout constants
 const TEMPLATE = {
   width: 850,
   height: 1100,
   cornerMarkerInset: 40,
-  cornerMarkerSize: 15,
   
-  // Student ID grid - adjust based on actual template
-  studentIdStartX: 110,  // Starting X position for student ID bubbles
-  studentIdStartY: 250,  // Starting Y position
+  // Student ID grid
+  studentIdStartX: 110,
+  studentIdStartY: 250,
   
-  // Answer grid - adjust based on actual template
-  answersStartX: 460,    // Starting X position for answer bubbles
-  answersStartY: 250,    // Starting Y position
+  // Answer grid
+  answersStartX: 460,
+  answersStartY: 250,
   
   // Bubble dimensions
   bubbleWidth: 18,
   bubbleHeight: 18,
-  bubbleSpacingX: 25,    // Horizontal spacing between bubbles
-  bubbleSpacingY: 30,    // Vertical spacing between rows
+  bubbleSpacingX: 25,
+  bubbleSpacingY: 30,
 }
 
-export interface SharpOMRResult {
+export interface JimpOMRResult {
   success: boolean
   confidence: number
   student_id: {
@@ -52,20 +50,19 @@ export interface SharpOMRResult {
   metadata: {
     processing_mode: string
     image_dimensions?: { width: number; height: number }
-    corners_detected?: boolean
   }
   error?: string
 }
 
 /**
- * Main OMR processing function
+ * Main OMR processing function using Jimp
  */
-export async function processWithSharp(
+export async function processWithJimp(
   imageData: Buffer | ArrayBuffer | Blob,
   numQuestions: number,
   studentIdLength: number = 10,
-  bubbleThreshold: number = 0.4  // 40% filled = marked
-): Promise<SharpOMRResult> {
+  bubbleThreshold: number = 0.35  // 35% filled = marked
+): Promise<JimpOMRResult> {
   try {
     // Convert input to Buffer
     let buffer: Buffer
@@ -78,46 +75,29 @@ export async function processWithSharp(
       buffer = imageData
     }
 
-    // Load and preprocess image
-    const image = sharp(buffer)
-    const metadata = await image.metadata()
+    // Load image with Jimp
+    const image = await Jimp.read(buffer)
+    const originalWidth = image.getWidth()
+    const originalHeight = image.getHeight()
 
-    if (!metadata.width || !metadata.height) {
-      throw new Error('Could not read image dimensions')
-    }
-
-    console.log(`Processing image: ${metadata.width}x${metadata.height}`)
+    console.log(`Processing image: ${originalWidth}x${originalHeight}`)
 
     // Resize to template size and convert to grayscale
-    const processed = await image
-      .resize(TEMPLATE.width, TEMPLATE.height, { 
-        fit: 'fill',
-        kernel: 'lanczos3'  // High quality resize
-      })
+    image
+      .resize(TEMPLATE.width, TEMPLATE.height)
       .grayscale()
-      .normalize()  // Improve contrast
-      .raw()
-      .toBuffer({ resolveWithObject: true })
-
-    const { data: pixelData, info } = processed
-    
-    // Verify corners are detected (alignment check)
-    const cornersOk = verifyCorners(pixelData, info.width, info.height)
+      .contrast(0.2)  // Improve contrast
 
     // Extract student ID
     const studentIdResult = extractStudentId(
-      pixelData,
-      info.width,
-      info.height,
+      image,
       studentIdLength,
       bubbleThreshold
     )
 
     // Extract answers
     const answersResult = extractAnswers(
-      pixelData,
-      info.width,
-      info.height,
+      image,
       numQuestions,
       bubbleThreshold
     )
@@ -140,18 +120,17 @@ export async function processWithSharp(
       student_id: studentIdResult,
       answers: answersResult,
       metadata: {
-        processing_mode: 'sharp-omr',
+        processing_mode: 'jimp-omr',
         image_dimensions: { 
-          width: metadata.width, 
-          height: metadata.height 
-        },
-        corners_detected: cornersOk
+          width: originalWidth, 
+          height: originalHeight 
+        }
       }
     }
   } catch (error) {
-    console.error('Sharp OMR Processing error:', error)
+    console.error('Jimp OMR Processing error:', error)
 
-    // Return error result with empty data
+    // Return fallback result
     return {
       success: false,
       confidence: 0,
@@ -174,42 +153,10 @@ export async function processWithSharp(
 }
 
 /**
- * Verify corner markers are present for alignment check
- */
-function verifyCorners(
-  pixelData: Buffer,
-  width: number,
-  height: number
-): boolean {
-  const checkSize = 25
-  const inset = TEMPLATE.cornerMarkerInset
-
-  const corners = [
-    { x: inset, y: inset },                          // Top-left
-    { x: width - inset - checkSize, y: inset },      // Top-right
-    { x: inset, y: height - inset - checkSize },     // Bottom-left
-    { x: width - inset - checkSize, y: height - inset - checkSize }  // Bottom-right
-  ]
-
-  let foundCount = 0
-  
-  for (const corner of corners) {
-    const fillRatio = getRegionDarkness(pixelData, width, corner.x, corner.y, checkSize, checkSize)
-    if (fillRatio > 0.25) {  // 25% dark = corner marker present
-      foundCount++
-    }
-  }
-
-  return foundCount >= 3  // At least 3 corners found
-}
-
-/**
  * Extract student ID from bubble grid
  */
 function extractStudentId(
-  pixelData: Buffer,
-  width: number,
-  height: number,
+  image: Jimp,
   idLength: number,
   threshold: number
 ): { student_id: string; confidence: number } {
@@ -225,9 +172,8 @@ function extractStudentId(
       const bubbleX = TEMPLATE.studentIdStartX + (col * TEMPLATE.bubbleSpacingX)
       const bubbleY = TEMPLATE.studentIdStartY + (digit * TEMPLATE.bubbleSpacingY)
 
-      const fillRatio = getRegionDarkness(
-        pixelData,
-        width,
+      const fillRatio = getBubbleFillRatio(
+        image,
         bubbleX,
         bubbleY,
         TEMPLATE.bubbleWidth,
@@ -243,16 +189,13 @@ function extractStudentId(
     // Accept if above threshold
     if (bestFillRatio >= threshold) {
       digits.push(bestDigit)
-      totalConfidence += Math.min(bestFillRatio * 150, 100)  // Scale to 0-100
+      totalConfidence += Math.min(bestFillRatio * 150, 100)
+    } else if (bestFillRatio >= threshold * 0.6) {
+      digits.push(bestDigit)
+      totalConfidence += 50
     } else {
-      // Try to detect anyway if close to threshold
-      if (bestFillRatio >= threshold * 0.6) {
-        digits.push(bestDigit)
-        totalConfidence += 50  // Medium confidence
-      } else {
-        digits.push('0')
-        totalConfidence += 20  // Low confidence
-      }
+      digits.push('0')
+      totalConfidence += 20
     }
   }
 
@@ -266,9 +209,7 @@ function extractStudentId(
  * Extract answers from bubble grid
  */
 function extractAnswers(
-  pixelData: Buffer,
-  width: number,
-  height: number,
+  image: Jimp,
   numQuestions: number,
   threshold: number
 ): {
@@ -288,7 +229,6 @@ function extractAnswers(
   const questionsPerColumn = 25
 
   for (let q = 0; q < numQuestions; q++) {
-    // Calculate position (questions arranged in columns of 25)
     const col = Math.floor(q / questionsPerColumn)
     const row = q % questionsPerColumn
 
@@ -299,13 +239,12 @@ function extractAnswers(
     // Check each option (A-E)
     for (let opt = 0; opt < 5; opt++) {
       const bubbleX = TEMPLATE.answersStartX + 
-                      (col * (5 * TEMPLATE.bubbleSpacingX + 50)) +  // Column offset
+                      (col * (5 * TEMPLATE.bubbleSpacingX + 50)) +
                       (opt * TEMPLATE.bubbleSpacingX)
       const bubbleY = TEMPLATE.answersStartY + (row * TEMPLATE.bubbleSpacingY)
 
-      const fillRatio = getRegionDarkness(
-        pixelData,
-        width,
+      const fillRatio = getBubbleFillRatio(
+        image,
         bubbleX,
         bubbleY,
         TEMPLATE.bubbleWidth,
@@ -335,7 +274,7 @@ function extractAnswers(
     answers.push({
       question_number: q + 1,
       detected_answers: detectedAnswers,
-      confidence: Math.round(maxFillRatio * 150),  // Scale confidence
+      confidence: Math.round(maxFillRatio * 150),
       filled_percentage: Math.round(maxFillRatio * 100)
     })
   }
@@ -344,64 +283,40 @@ function extractAnswers(
 }
 
 /**
- * Calculate how "dark" a region is (ratio of dark pixels)
- * Used for bubble detection
+ * Calculate how "filled" a bubble region is using Jimp
  */
-function getRegionDarkness(
-  pixelData: Buffer,
-  imageWidth: number,
+function getBubbleFillRatio(
+  image: Jimp,
   x: number,
   y: number,
-  regionWidth: number,
-  regionHeight: number
+  width: number,
+  height: number
 ): number {
   let darkPixels = 0
   let totalPixels = 0
 
-  // Round coordinates
-  const startX = Math.floor(x)
-  const startY = Math.floor(y)
+  const imgWidth = image.getWidth()
+  const imgHeight = image.getHeight()
 
-  for (let py = startY; py < startY + regionHeight; py++) {
-    for (let px = startX; px < startX + regionWidth; px++) {
+  // Sample pixels within the bubble region
+  for (let py = Math.floor(y); py < Math.floor(y + height); py++) {
+    for (let px = Math.floor(x); px < Math.floor(x + width); px++) {
       // Bounds check
-      if (px >= 0 && px < imageWidth && py >= 0) {
-        const pixelIndex = py * imageWidth + px
-        
-        if (pixelIndex >= 0 && pixelIndex < pixelData.length) {
-          const value = pixelData[pixelIndex]
-          
-          // Grayscale: 0 = black, 255 = white
+      if (px >= 0 && px < imgWidth && py >= 0 && py < imgHeight) {
+        try {
+          const color = Jimp.intToRGBA(image.getPixelColor(px, py))
+          // Grayscale: use red channel (all channels are same after grayscale)
           // Consider pixels below 100 as "dark" (filled)
-          if (value < 100) {
+          if (color.r < 100) {
             darkPixels++
           }
           totalPixels++
+        } catch {
+          // Ignore pixel read errors
         }
       }
     }
   }
 
   return totalPixels > 0 ? darkPixels / totalPixels : 0
-}
-
-/**
- * Get a debug visualization (for testing)
- */
-export async function getDebugImage(
-  imageData: Buffer | ArrayBuffer,
-  numQuestions: number,
-  studentIdLength: number = 10
-): Promise<Buffer> {
-  const buffer = imageData instanceof ArrayBuffer 
-    ? Buffer.from(imageData) 
-    : imageData
-
-  // Return the processed grayscale image for debugging
-  return sharp(buffer)
-    .resize(TEMPLATE.width, TEMPLATE.height, { fit: 'fill' })
-    .grayscale()
-    .normalize()
-    .png()
-    .toBuffer()
 }

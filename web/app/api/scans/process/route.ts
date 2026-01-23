@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
-import { processWithSharp } from '@/lib/sharp-omr-processor'
+import { processWithJimp } from '@/lib/jimp-omr-processor'
 
 /**
  * POST /api/scans/process
@@ -97,13 +97,13 @@ export async function POST(request: NextRequest) {
 
     console.log('Processing scan for exam:', exam.name, 'Questions:', numQuestions)
     
-    // Process the image using Sharp-based OMR processor
+    // Process the image using Jimp-based OMR processor (pure JS, no native deps)
     const imageBuffer = await imageData.arrayBuffer()
-    const processingResult = await processWithSharp(
+    const processingResult = await processWithJimp(
       Buffer.from(imageBuffer),
       numQuestions,
       studentIdLength,
-      bubble_threshold || 0.4  // Default 40% threshold
+      bubble_threshold || 0.35  // Default 35% threshold
     )
     
     // If OMR failed, use provided student_id or generate fallback
