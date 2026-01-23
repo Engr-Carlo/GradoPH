@@ -23,6 +23,7 @@ import {
   Point 
 } from '../lib/cornerDetection'
 import { cropToCorners } from '../lib/imageProcessor'
+import { PRODUCTION_API_URL, isDevelopment } from '../config'
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window')
 
@@ -439,6 +440,12 @@ export default function ScannerScreen({ route, navigation }: any) {
       }
 
       const getWebApiUrl = () => {
+        // Production mode: Use Vercel URL
+        if (!isDevelopment) {
+          return PRODUCTION_API_URL
+        }
+        
+        // Development mode: Auto-detect local IP
         const debuggerHost = Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost
         if (debuggerHost) {
           const host = debuggerHost.split(':').shift()
@@ -448,6 +455,7 @@ export default function ScannerScreen({ route, navigation }: any) {
       }
 
       const webApiUrl = getWebApiUrl()
+      console.log('Using API URL:', webApiUrl, isDevelopment ? '(dev mode)' : '(production mode)')
       
       const response = await fetch(`${webApiUrl}/api/scans/process`, {
         method: 'POST',
