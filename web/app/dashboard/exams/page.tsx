@@ -241,12 +241,20 @@ function ExamsContent() {
               </Link>
               <h1 className="text-2xl font-bold text-gray-900">Manage Exams</h1>
             </div>
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-            >
-              {showForm ? 'Cancel' : '+ Create Exam'}
-            </button>
+            <div className="flex gap-2">
+              <Link
+                href="/dashboard/exams/test"
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
+              >
+                🔬 Scanner Test
+              </Link>
+              <button
+                onClick={() => setShowForm(!showForm)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                {showForm ? 'Cancel' : '+ Create Exam'}
+              </button>
+            </div>
           </div>
         </div>
       </header>

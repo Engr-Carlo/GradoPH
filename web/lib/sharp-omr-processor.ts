@@ -40,16 +40,19 @@ export interface SharpOMRResult {
   student_id: {
     student_id: string
     confidence: number
+    debug?: { col: number; digit: number; fillRatio: number }[]
   }
   answers: {
     question_number: number
     detected_answers: string[]
     confidence: number
     filled_percentage: number
+    debug?: { option: string; fillRatio: number }[]
   }[]
   metadata: {
     processing_mode: string
     image_dimensions?: { width: number; height: number }
+    template_specs?: typeof TEMPLATE
   }
   error?: string
 }
@@ -61,7 +64,8 @@ export async function processWithSharp(
   imageData: Buffer | ArrayBuffer | Blob,
   numQuestions: number,
   studentIdLength: number = 10,
-  bubbleThreshold: number = 0.35
+  bubbleThreshold: number = 0.35,
+  debug: boolean = false
 ): Promise<SharpOMRResult> {
   try {
     // Convert input to Buffer
@@ -95,7 +99,8 @@ export async function processWithSharp(
       pixelData,
       info.width,
       studentIdLength,
-      bubbleThreshold
+      bubbleThreshold,
+      debug
     )
 
     // Extract answers
@@ -103,7 +108,8 @@ export async function processWithSharp(
       pixelData,
       info.width,
       numQuestions,
-      bubbleThreshold
+      bubbleThreshold,
+      debug
     )
 
     // Calculate overall confidence
@@ -128,7 +134,8 @@ export async function processWithSharp(
         image_dimensions: { 
           width: originalWidth, 
           height: originalHeight 
-        }
+        },
+        template_specs: debug ? TEMPLATE : undefined,
       }
     }
   } catch (error) {
@@ -163,10 +170,12 @@ function extractStudentId(
   pixelData: Buffer,
   width: number,
   idLength: number,
-  threshold: number
-): { student_id: string; confidence: number } {
+  threshold: number,
+  includeDebug: boolean = false
+): { student_id: string; confidence: number; debug?: { col: number; digit: number; fillRatio: number }[] } {
   const digits: string[] = []
   let totalConfidence = 0
+  const debugData: { col: number; digit: number; fillRatio: number }[] = []
 
   for (let col = 0; col < idLength; col++) {
     let bestDigit = '0'
@@ -184,6 +193,10 @@ function extractStudentId(
         TEMPLATE.bubbleWidth,
         TEMPLATE.bubbleHeight
       )
+
+      if (includeDebug) {
+        debugData.push({ col, digit, fillRatio: Math.round(fillRatio * 100) / 100 })
+      }
 
       if (fillRatio > bestFillRatio) {
         bestFillRatio = fillRatio
@@ -203,10 +216,16 @@ function extractStudentId(
     }
   }
 
-  return {
+  const result: { student_id: string; confidence: number; debug?: { col: number; digit: number; fillRatio: number }[] } = {
     student_id: digits.join(''),
     confidence: Math.round(totalConfidence / idLength)
   }
+  
+  if (includeDebug) {
+    result.debug = debugData
+  }
+  
+  return result
 }
 
 /**
@@ -216,18 +235,21 @@ function extractAnswers(
   pixelData: Buffer,
   width: number,
   numQuestions: number,
-  threshold: number
+  threshold: number,
+  includeDebug: boolean = false
 ): {
   question_number: number
   detected_answers: string[]
   confidence: number
   filled_percentage: number
+  debug?: { option: string; fillRatio: number }[]
 }[] {
   const answers: {
     question_number: number
     detected_answers: string[]
     confidence: number
     filled_percentage: number
+    debug?: { option: string; fillRatio: number }[]
   }[] = []
 
   const options = ['A', 'B', 'C', 'D', 'E']
@@ -239,6 +261,7 @@ function extractAnswers(
 
     const detectedAnswers: string[] = []
     const fillRatios: number[] = []
+    const debugOptions: { option: string; fillRatio: number }[] = []
     let maxFillRatio = 0
 
     for (let opt = 0; opt < 5; opt++) {
@@ -257,6 +280,10 @@ function extractAnswers(
       )
 
       fillRatios.push(fillRatio)
+      
+      if (includeDebug) {
+        debugOptions.push({ option: options[opt], fillRatio: Math.round(fillRatio * 100) / 100 })
+      }
 
       if (fillRatio >= threshold) {
         detectedAnswers.push(options[opt])
@@ -275,12 +302,18 @@ function extractAnswers(
       }
     }
 
-    answers.push({
+    const answerResult: typeof answers[0] = {
       question_number: q + 1,
       detected_answers: detectedAnswers,
       confidence: Math.round(maxFillRatio * 150),
       filled_percentage: Math.round(maxFillRatio * 100)
-    })
+    }
+    
+    if (includeDebug) {
+      answerResult.debug = debugOptions
+    }
+
+    answers.push(answerResult)
   }
 
   return answers
