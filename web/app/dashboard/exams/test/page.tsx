@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { generateTestTemplatePDF, generateTestTemplateCanvas, OMR_TEMPLATE, TestTemplateConfig } from '@/lib/generateTestTemplate'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { supabase } from '@/lib/supabase'
 
 interface ScanResult {
   success: boolean
@@ -24,8 +24,6 @@ interface ScanResult {
 }
 
 export default function ScannerTestPage() {
-  const supabase = createClientComponentClient()
-  
   // Test configuration
   const [testStudentId, setTestStudentId] = useState('1234567890')
   const [testAnswers, setTestAnswers] = useState<string[]>(['A', 'B', 'C', 'D', 'E', 'A', 'B', 'C', 'D', 'E'])
