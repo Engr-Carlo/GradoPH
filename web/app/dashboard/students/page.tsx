@@ -53,7 +53,7 @@ function StudentsContent() {
       .eq('id', user.id)
       .single()
 
-    if (teacherData) {
+    if (teacherData?.school_id) {
       const { data: schoolData } = await supabase
         .from('schools')
         .select('student_id_length')

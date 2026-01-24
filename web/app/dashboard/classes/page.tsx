@@ -44,7 +44,7 @@ export default function ClassesPage() {
       .eq('id', userId)
       .single()
 
-    if (teacherData) {
+    if (teacherData?.school_id) {
       const { data: classesData } = await supabase
         .from('classes')
         .select('*')

@@ -62,7 +62,7 @@ function ResultsContent() {
       .eq('id', user.id)
       .single()
 
-    if (teacherData) {
+    if (teacherData?.school_id) {
       // Load all exams for dropdown
       const { data: examsData } = await supabase
         .from('exams')

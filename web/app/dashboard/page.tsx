@@ -43,7 +43,7 @@ export default function DashboardPage() {
       .eq('id', user.id)
       .single()
 
-    if (teacherData) {
+    if (teacherData?.school_id) {
       setTeacher(teacherData)
 
       // Get school
