@@ -8,8 +8,8 @@ import Link from 'next/link'
 interface Class {
   id: string
   name: string
-  grade_level: string
-  section: string
+  grade_level: string | null
+  section: string | null
   created_at: string
 }
 
@@ -42,6 +42,7 @@ export default function ClassesPage() {
       .from('teachers')
       .select('school_id')
       .eq('id', userId)
+      .returns<{ school_id: string | null }[]>()
       .single()
 
     if (teacherData?.school_id) {
@@ -66,17 +67,18 @@ export default function ClassesPage() {
       .from('teachers')
       .select('school_id')
       .eq('id', user.id)
+      .returns<{ school_id: string | null }[]>()
       .single()
 
-    if (!teacherData) return
+    if (!teacherData?.school_id) return
 
     const { error } = await supabase
       .from('classes')
-      .insert([{
+      .insert({
         ...formData,
         school_id: teacherData.school_id,
         teacher_id: user.id,
-      }])
+      })
 
     if (!error) {
       setFormData({ name: '', grade_level: '', section: '' })

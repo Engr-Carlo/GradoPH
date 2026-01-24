@@ -11,24 +11,24 @@ type Answer = 'A' | 'B' | 'C' | 'D'
 interface Exam {
   id: string
   name: string
-  exam_date: string
+  exam_date: string | null
   answer_key_json: Answer[]
   answer_key_locked: boolean
   created_at: string
   classes: {
     id: string
     name: string
-    grade_level: string
-    section: string
-    school_id: string
+    grade_level: string | null
+    section: string | null
+    school_id: string | null
   }
 }
 
 interface Class {
   id: string
   name: string
-  grade_level: string
-  section: string
+  grade_level: string | null
+  section: string | null
 }
 
 function ExamsContent() {
@@ -71,7 +71,7 @@ function ExamsContent() {
       .eq('classes.school_id', schoolId)
       .order('created_at', { ascending: false })
 
-    setExams(data || [])
+    setExams((data as unknown as Exam[]) || [])
   }
 
   const checkAuthAndLoad = async () => {
@@ -114,6 +114,8 @@ function ExamsContent() {
   }, [classId])
 
   const handleDownloadTemplate = async (exam: Exam) => {
+    if (!exam.classes.school_id) return
+    
     const { data: schoolData } = await supabase
       .from('schools')
       .select('student_id_length')
@@ -124,8 +126,8 @@ function ExamsContent() {
       const result = await generateBubbleSheetPDF({
         exam_id: exam.id,
         exam_name: exam.name,
-        class_name: `${exam.classes.name} - ${exam.classes.grade_level} ${exam.classes.section}`,
-        exam_date: new Date(exam.exam_date).toLocaleDateString(),
+        class_name: `${exam.classes.name} - ${exam.classes.grade_level || ''} ${exam.classes.section || ''}`,
+        exam_date: exam.exam_date ? new Date(exam.exam_date).toLocaleDateString() : '',
         student_id_length: schoolData.student_id_length,
         num_questions: exam.answer_key_json.length, // use answer key length
         show_grid: showGrid,
@@ -385,7 +387,7 @@ function ExamsContent() {
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900">{exam.name}</h3>
                     <p className="text-sm text-gray-500 mt-1">
-                      Date: {new Date(exam.exam_date).toLocaleDateString()}
+                      Date: {exam.exam_date ? new Date(exam.exam_date).toLocaleDateString() : 'Not set'}
                     </p>
                     {exam.answer_key_locked && (
                       <span className="inline-block mt-2 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">

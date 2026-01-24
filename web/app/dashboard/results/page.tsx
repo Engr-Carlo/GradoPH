@@ -11,7 +11,7 @@ interface Scan {
   answers_json: string[]
   confidence: number
   is_unknown_student: boolean
-  score: number
+  score: number | null
   scanned_at: string
   image_path: string
   students: {
@@ -22,13 +22,13 @@ interface Scan {
 interface Exam {
   id: string
   name: string
-  exam_date: string
+  exam_date: string | null
   answer_key_json: string[]
   classes: {
     id: string
     name: string
-    grade_level: string
-    section: string
+    grade_level: string | null
+    section: string | null
   }
 }
 
@@ -78,7 +78,7 @@ function ResultsContent() {
         .eq('classes.school_id', teacherData.school_id)
         .order('created_at', { ascending: false })
 
-      setExams(examsData || [])
+      setExams((examsData as unknown as Exam[]) || [])
 
       if (examId) {
         await loadExamResults(examId)
@@ -117,7 +117,7 @@ function ResultsContent() {
         .eq('exam_id', eId)
         .order('scanned_at', { ascending: false })
 
-      setScans(scansData || [])
+      setScans((scansData as unknown as Scan[]) || [])
     }
   }
 
@@ -158,7 +158,7 @@ function ResultsContent() {
     const rows = scans.map(scan => [
       scan.student_id,
       scan.students?.name || 'Unknown',
-      scan.score.toString(),
+      (scan.score ?? 0).toString(),
       ...scan.answers_json.map(a => a || '-')
     ])
 
@@ -177,7 +177,7 @@ function ResultsContent() {
 
   const getAverage = () => {
     if (scans.length === 0) return 0
-    return (scans.reduce((sum, scan) => sum + scan.score, 0) / scans.length).toFixed(2)
+    return (scans.reduce((sum, scan) => sum + (scan.score ?? 0), 0) / scans.length).toFixed(2)
   }
 
   if (loading) {
@@ -256,7 +256,7 @@ function ResultsContent() {
                 <div className="bg-white rounded-lg shadow p-4">
                   <div className="text-sm text-gray-600">Highest Score</div>
                   <div className="text-2xl font-bold text-green-600">
-                    {Math.max(...scans.map(s => s.score))}/50
+                    {Math.max(...scans.map(s => s.score ?? 0))}/50
                   </div>
                 </div>
                 <div className="bg-white rounded-lg shadow p-4">
@@ -316,8 +316,8 @@ function ResultsContent() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
-                          <span className={`font-semibold ${scan.score >= 40 ? 'text-green-600' : scan.score >= 30 ? 'text-yellow-600' : 'text-red-600'}`}>
-                            {scan.score}/50
+                          <span className={`font-semibold ${(scan.score ?? 0) >= 40 ? 'text-green-600' : (scan.score ?? 0) >= 30 ? 'text-yellow-600' : 'text-red-600'}`}>
+                            {scan.score ?? 0}/50
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-600">

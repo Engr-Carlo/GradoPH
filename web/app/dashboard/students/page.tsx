@@ -15,8 +15,8 @@ interface Student {
 interface Class {
   id: string
   name: string
-  grade_level: string
-  section: string
+  grade_level: string | null
+  section: string | null
 }
 
 function StudentsContent() {

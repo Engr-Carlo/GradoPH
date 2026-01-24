@@ -9,7 +9,7 @@ interface Teacher {
   id: string
   email: string
   full_name: string
-  school_id: string
+  school_id: string | null
 }
 
 interface School {
