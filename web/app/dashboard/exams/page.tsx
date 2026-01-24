@@ -87,7 +87,7 @@ function ExamsContent() {
       .eq('id', user.id)
       .single()
 
-    if (teacherData) {
+    if (teacherData?.school_id) {
       const { data: classesData } = await supabase
         .from('classes')
         .select('*')
@@ -197,7 +197,7 @@ function ExamsContent() {
         .eq('id', user.id)
         .single()
 
-      if (teacherData) {
+      if (teacherData?.school_id) {
         await loadExams(teacherData.school_id)
       }
     } else {
