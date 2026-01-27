@@ -9,6 +9,7 @@ import ExamsListScreen from './screens/ExamsListScreen'
 import ExamDetailScreen from './screens/ExamDetailScreen'
 import ScannerScreen from './screens/ScannerScreen'
 import CalibrationScreen from './screens/CalibrationScreen'
+import TestScannerScreen from './screens/TestScannerScreen'
 
 const Stack = createNativeStackNavigator()
 
@@ -61,6 +62,11 @@ export default function App() {
               name="Calibration"
               component={CalibrationScreen}
               options={{ headerShown: true, title: 'Calibrate Scanner' }}
+            />
+            <Stack.Screen
+              name="TestScanner"
+              component={TestScannerScreen}
+              options={{ headerShown: false }}
             />
           </>
         ) : (
