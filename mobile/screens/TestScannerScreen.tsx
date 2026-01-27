@@ -96,13 +96,18 @@ export default function TestScannerScreen({ navigation }: any) {
 
       // Upload image to storage
       const fileName = `test-${Date.now()}.jpg`
-      const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      })
+      
+      // Upload using fetch and FormData (React Native compatible)
+      const formData = new FormData()
+      formData.append('file', {
+        uri: imageUri,
+        type: 'image/jpeg',
+        name: fileName,
+      } as any)
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('scan-images')
-        .upload(fileName, decode(base64), {
+        .upload(fileName, formData as any, {
           contentType: 'image/jpeg',
         })
 
@@ -134,16 +139,6 @@ export default function TestScannerScreen({ navigation }: any) {
     } finally {
       setLoading(false)
     }
-  }
-
-  // Helper to decode base64 (simple implementation)
-  const decode = (base64: string): ArrayBuffer => {
-    const binary = atob(base64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i)
-    }
-    return bytes.buffer
   }
 
   const calculateAccuracy = () => {
