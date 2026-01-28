@@ -281,40 +281,25 @@ export default function ScannerScreen({ route, navigation }: any) {
           }
         } else {
           console.log('Corner validation failed:', validation.issues)
+          // Return not detected if validation fails
+          return {
+            isPaperDetected: false,
+            corners: baseCorners,
+          }
         }
+      } else {
+        // Server detection returned low confidence
+        console.log('Server detection low confidence:', result.corners?.confidence || 0)
       }
     } catch (error) {
-      console.log('Server corner detection failed, using fallback:', error)
+      console.log('Server corner detection error:', error)
     }
     
-    // Fallback: assume paper is in frame if we got here
-    // Add subtle jitter to show detection is active
-    const jitter = () => (Math.random() - 0.5) * 3
-    
-    const corners: DetectedCorners = {
-      topLeft: { 
-        x: baseCorners.topLeft.x + jitter(), 
-        y: baseCorners.topLeft.y + jitter() 
-      },
-      topRight: { 
-        x: baseCorners.topRight.x + jitter(), 
-        y: baseCorners.topRight.y + jitter() 
-      },
-      bottomLeft: { 
-        x: baseCorners.bottomLeft.x + jitter(), 
-        y: baseCorners.bottomLeft.y + jitter() 
-      },
-      bottomRight: { 
-        x: baseCorners.bottomRight.x + jitter(), 
-        y: baseCorners.bottomRight.y + jitter() 
-      },
-      confidence: 50, // Lower confidence for fallback
-      isStable: consecutiveGoodFramesRef.current >= 3,
-    }
-    
+    // Fallback: Return NOT detected - don't fake it
+    // User needs to position paper properly or use manual mode
     return {
-      isPaperDetected: true,
-      corners,
+      isPaperDetected: false,
+      corners: baseCorners,
     }
   }
 

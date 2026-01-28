@@ -78,22 +78,22 @@ export async function detectCornersFromServer(
     const webApiUrl = ALWAYS_USE_PRODUCTION_API ? PRODUCTION_API_URL : 
                       (isDevelopment ? 'http://192.168.1.100:3000' : PRODUCTION_API_URL)
     
-    // Read image file
+    // Read image file as base64
     const imageBase64 = await FileSystem.readAsStringAsync(imageUri, {
       encoding: FileSystem.EncodingType.Base64,
     })
     
-    // Convert base64 to blob
-    const imageBlob = base64ToBlob(imageBase64, 'image/jpeg')
-    
-    // Create form data
-    const formData = new FormData()
-    formData.append('image', imageBlob, 'capture.jpg')
-    
-    // Call corner detection API
+    // Send base64 directly as JSON (React Native doesn't support Blob properly)
     const response = await fetch(`${webApiUrl}/api/scans/detect-corners`, {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image_base64: imageBase64,
+        width: imageWidth,
+        height: imageHeight,
+      }),
     })
     
     if (!response.ok) {

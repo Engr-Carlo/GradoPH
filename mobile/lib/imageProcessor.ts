@@ -14,7 +14,7 @@ export interface CropResult {
 
 /**
  * Crop and transform image based on detected corners
- * Handles orientation correction and perspective normalization
+ * Handles orientation correction - NO STRETCHING
  */
 export async function cropToCorners(
   imageUri: string,
@@ -24,11 +24,12 @@ export async function cropToCorners(
   targetWidth: number = 850,
   targetHeight: number = 1100
 ): Promise<CropResult> {
-  // Calculate bounding box of the detected corners
-  const minX = Math.min(corners.topLeft.x, corners.bottomLeft.x)
-  const maxX = Math.max(corners.topRight.x, corners.bottomRight.x)
-  const minY = Math.min(corners.topLeft.y, corners.topRight.y)
-  const maxY = Math.max(corners.bottomLeft.y, corners.bottomRight.y)
+  // Calculate bounding box of the detected corners with padding
+  const padding = 20 // Add padding to avoid cutting edges
+  const minX = Math.min(corners.topLeft.x, corners.bottomLeft.x) - padding
+  const maxX = Math.max(corners.topRight.x, corners.bottomRight.x) + padding
+  const minY = Math.min(corners.topLeft.y, corners.topRight.y) - padding
+  const maxY = Math.max(corners.bottomLeft.y, corners.bottomRight.y) + padding
   
   // Ensure bounds are within image
   const cropX = Math.max(0, Math.floor(minX))
@@ -58,13 +59,8 @@ export async function cropToCorners(
       actions.push({ rotate: -90 })
     }
     
-    // Resize to target dimensions (portrait 850x1100)
-    actions.push({
-      resize: {
-        width: targetWidth,
-        height: targetHeight,
-      },
-    })
+    // DO NOT resize/stretch - let the server handle that
+    // The OMR processor will resize to 850x1100 on the server
     
     const result = await manipulateAsync(
       imageUri,
@@ -72,10 +68,14 @@ export async function cropToCorners(
       { format: SaveFormat.JPEG, compress: 0.9 }
     )
     
+    // Return the actual dimensions after cropping (and possible rotation)
+    const finalWidth = isLandscape ? cropHeight : cropWidth
+    const finalHeight = isLandscape ? cropWidth : cropHeight
+    
     return {
       uri: result.uri,
-      width: targetWidth,
-      height: targetHeight,
+      width: finalWidth,
+      height: finalHeight,
     }
   } catch (error) {
     console.error('Error cropping image:', error)
