@@ -9,8 +9,12 @@ import {
   Image,
   Dimensions,
   Animated,
+  ScrollView,
+  TextInput,
+  Modal,
 } from 'react-native'
 import { CameraView, Camera } from 'expo-camera'
+import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '../lib/supabase'
 import * as FileSystem from 'expo-file-system/legacy'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -62,6 +66,9 @@ const calculateTemplateFrame = () => {
 // Scan modes
 type ScanMode = 'auto' | 'manual'
 
+// Minimum consecutive good frames needed before auto-capture
+const MIN_STABLE_FRAMES = 5
+
 export default function ScannerScreen({ route, navigation }: any) {
   const { exam } = route.params
   const templateFrame = calculateTemplateFrame()
@@ -74,10 +81,19 @@ export default function ScannerScreen({ route, navigation }: any) {
   const cameraRef = useRef<any>(null)
   
   // Scanning state
-  const [scanMode, setScanMode] = useState<ScanMode>('auto')
+  const [scanMode, setScanMode] = useState<ScanMode>('manual') // Default to manual for reliability
   const [showGuides, setShowGuides] = useState(true)
   const [retryCount, setRetryCount] = useState(0)
-  const [statusMessage, setStatusMessage] = useState('Position paper in frame')
+  const [statusMessage, setStatusMessage] = useState('Tap capture when paper is aligned')
+  
+  // Manual entry modal
+  const [showManualEntry, setShowManualEntry] = useState(false)
+  const [manualStudentId, setManualStudentId] = useState('')
+  const [manualAnswers, setManualAnswers] = useState<string[]>([])
+  
+  // Scan result display
+  const [lastScanResult, setLastScanResult] = useState<any>(null)
+  const [showResultModal, setShowResultModal] = useState(false)
   
   // Corner detection state
   const [detectedCorners, setDetectedCorners] = useState<DetectedCorners>(
@@ -198,16 +214,21 @@ export default function ScannerScreen({ route, navigation }: any) {
       if (analysis.isPaperDetected) {
         consecutiveGoodFramesRef.current++
         
-        if (consecutiveGoodFramesRef.current >= 3) {
-          // Paper detected and stable for 3+ frames
+        if (consecutiveGoodFramesRef.current >= MIN_STABLE_FRAMES) {
+          // Paper detected and stable for enough frames - ready for auto-capture
           setPaperDetected(true)
           setIsStable(true)
-          setStatusMessage('✅ Ready to capture!')
-        } else if (consecutiveGoodFramesRef.current >= 1) {
-          // Paper detected, waiting for stability
+          setStatusMessage('✅ Paper detected - Ready!')
+        } else if (consecutiveGoodFramesRef.current >= 2) {
+          // Paper detected, waiting for more stability
           setPaperDetected(true)
           setIsStable(false)
-          setStatusMessage(`⏳ Hold steady... (${consecutiveGoodFramesRef.current}/3)`)
+          setStatusMessage(`⏳ Hold steady... (${consecutiveGoodFramesRef.current}/${MIN_STABLE_FRAMES})`)
+        } else {
+          // Just started detecting
+          setPaperDetected(true)
+          setIsStable(false)
+          setStatusMessage('📄 Paper detected, hold steady...')
         }
         
         // Update corners based on analysis
@@ -582,6 +603,12 @@ export default function ScannerScreen({ route, navigation }: any) {
       })
 
       const result = await response.json()
+      
+      console.log('=== SCAN RESULT ===')
+      console.log('Success:', result.success)
+      console.log('Confidence:', result.confidence)
+      console.log('Student ID:', result.student_id)
+      console.log('Score:', result.score, '/', result.total_questions)
 
       if (!response.ok || !result.success) {
         throw new Error(result.error || result.details || 'Processing failed')
@@ -598,44 +625,57 @@ export default function ScannerScreen({ route, navigation }: any) {
         return
       }
 
-      // Check confidence
-      if (result.confidence < 60) {
-        const newRetryCount = retryCount + 1
-        setRetryCount(newRetryCount)
-        
-        if (newRetryCount < 3) {
-          Alert.alert(
-            'Low Confidence',
-            `Detection confidence: ${result.confidence}%\n\nTry better lighting or alignment.\n\nRetry ${newRetryCount}/3`,
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
-              { text: 'Retry', onPress: resetScanner }
-            ]
-          )
-        } else {
-          Alert.alert(
-            'Detection Issues',
-            'Would you like to enter student ID manually?',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
-              { text: 'Manual Entry', onPress: () => {
-                Alert.alert('Manual Entry', 'Not implemented yet')
-              }}
-            ]
-          )
-        }
-        return
-      }
+      // Store result for display
+      setLastScanResult(result)
 
-      // Success!
-      Alert.alert(
-        '✅ Scan Complete!',
-        `Student ID: ${result.student_id}\nScore: ${result.score}/${result.total_questions}\nConfidence: ${result.confidence}%`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      )
+      // Always show results, but warn if low confidence
+      if (result.confidence < 40) {
+        // Very low confidence - offer manual entry
+        Alert.alert(
+          '⚠️ Low Confidence Detection',
+          `Student ID: ${result.student_id || 'Not detected'}\nConfidence: ${result.confidence}%\n\nThe scan quality is too low. Would you like to enter data manually?`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: resetScanner },
+            { text: 'Use Anyway', onPress: () => setShowResultModal(true) },
+            { text: 'Manual Entry', onPress: () => {
+              setManualStudentId(result.student_id || '')
+              setShowManualEntry(true)
+            }}
+          ]
+        )
+      } else if (result.confidence < 70) {
+        // Medium confidence - show results but warn
+        Alert.alert(
+          '📋 Scan Results (Review Recommended)',
+          `Student ID: ${result.student_id || 'Unknown'}\nScore: ${result.score ?? 0}/${result.total_questions ?? exam.answer_key_json?.length ?? '?'}\nConfidence: ${result.confidence}%\n\nPlease verify the results are correct.`,
+          [
+            { text: 'Retry', onPress: resetScanner },
+            { text: 'View Details', onPress: () => setShowResultModal(true) },
+            { text: 'Accept', style: 'default', onPress: () => navigation.goBack() }
+          ]
+        )
+      } else {
+        // Good confidence - show success
+        Alert.alert(
+          '✅ Scan Complete!',
+          `Student ID: ${result.student_id}\nScore: ${result.score ?? 0}/${result.total_questions ?? exam.answer_key_json?.length ?? '?'}\nConfidence: ${result.confidence}%`,
+          [
+            { text: 'View Details', onPress: () => setShowResultModal(true) },
+            { text: 'Done', style: 'default', onPress: () => navigation.goBack() }
+          ]
+        )
+      }
     } catch (error: any) {
       console.error('Processing error:', error)
-      Alert.alert('Processing Failed', error.message || 'Unknown error')
+      Alert.alert(
+        'Processing Failed', 
+        error.message || 'Unknown error',
+        [
+          { text: 'Cancel', onPress: () => navigation.goBack() },
+          { text: 'Retry', onPress: resetScanner },
+          { text: 'Manual Entry', onPress: () => setShowManualEntry(true) }
+        ]
+      )
     } finally {
       setProcessing(false)
     }
@@ -653,6 +693,37 @@ export default function ScannerScreen({ route, navigation }: any) {
     resetStability()
     resetDetectionStage() // Reset the smooth detection stage
     if (scanMode === 'auto') startCornerAnalysis()
+  }
+
+  // Pick image from gallery for manual upload
+  async function pickImageFromGallery() {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 1,
+        base64: true,
+      })
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0]
+        console.log('Image picked:', asset.width, 'x', asset.height)
+        
+        // Set as captured image and process
+        setCapturedImage(asset.uri)
+        setStatusMessage('Processing selected image...')
+        
+        // Process the image directly
+        if (asset.base64) {
+          await processImage(asset.uri, asset.base64)
+        } else {
+          Alert.alert('Error', 'Could not read image data')
+        }
+      }
+    } catch (error) {
+      console.error('Image picker error:', error)
+      Alert.alert('Error', 'Failed to pick image from gallery')
+    }
   }
 
   function toggleScanMode() {
@@ -823,29 +894,164 @@ export default function ScannerScreen({ route, navigation }: any) {
                 {exam.name} • {exam.num_questions || 0} questions
               </Text>
               
-              {/* Manual capture button - always visible */}
-              <TouchableOpacity
-                style={[
-                  styles.captureButton,
-                  processing && styles.captureButtonDisabled,
-                ]}
-                onPress={handleCapture}
-                disabled={processing}
-              >
-                {processing ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <View style={styles.captureButtonInner} />
-                )}
-              </TouchableOpacity>
+              {/* Buttons row */}
+              <View style={styles.buttonRow}>
+                {/* Gallery button */}
+                <TouchableOpacity
+                  style={styles.galleryButton}
+                  onPress={pickImageFromGallery}
+                  disabled={processing}
+                >
+                  <Text style={styles.galleryButtonText}>📁</Text>
+                </TouchableOpacity>
+                
+                {/* Manual capture button - always visible */}
+                <TouchableOpacity
+                  style={[
+                    styles.captureButton,
+                    processing && styles.captureButtonDisabled,
+                  ]}
+                  onPress={handleCapture}
+                  disabled={processing}
+                >
+                  {processing ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <View style={styles.captureButtonInner} />
+                  )}
+                </TouchableOpacity>
+                
+                {/* Manual entry button */}
+                <TouchableOpacity
+                  style={styles.manualEntryButton}
+                  onPress={() => setShowManualEntry(true)}
+                  disabled={processing}
+                >
+                  <Text style={styles.galleryButtonText}>✏️</Text>
+                </TouchableOpacity>
+              </View>
               
               <Text style={styles.hint}>
                 {scanMode === 'auto' 
                   ? 'Auto-capture when paper is aligned • Or tap to capture manually'
-                  : 'Tap the button to capture'}
+                  : '📁 Gallery | ⭕ Capture | ✏️ Manual Entry'}
               </Text>
             </View>
           </View>
+
+          {/* Result Modal */}
+          <Modal
+            visible={showResultModal}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={() => setShowResultModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Scan Results</Text>
+                
+                {lastScanResult && (
+                  <ScrollView style={styles.resultScroll}>
+                    <Text style={styles.resultText}>
+                      Student ID: {lastScanResult.student_id || 'Not detected'}
+                    </Text>
+                    <Text style={styles.resultText}>
+                      Score: {lastScanResult.score ?? 0}/{lastScanResult.total_questions ?? '?'}
+                    </Text>
+                    <Text style={styles.resultText}>
+                      Confidence: {lastScanResult.confidence}%
+                    </Text>
+                    
+                    {lastScanResult.answers && (
+                      <>
+                        <Text style={styles.resultLabel}>Detected Answers:</Text>
+                        <Text style={styles.answersText}>
+                          {lastScanResult.answers.map((a: string, i: number) => 
+                            `${i+1}:${a || '-'}`
+                          ).join('  ')}
+                        </Text>
+                      </>
+                    )}
+                  </ScrollView>
+                )}
+                
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.modalButtonSecondary}
+                    onPress={() => {
+                      setShowResultModal(false)
+                      resetScanner()
+                    }}
+                  >
+                    <Text style={styles.buttonText}>Retry</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalButtonPrimary}
+                    onPress={() => {
+                      setShowResultModal(false)
+                      navigation.goBack()
+                    }}
+                  >
+                    <Text style={styles.buttonText}>Accept</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Manual Entry Modal */}
+          <Modal
+            visible={showManualEntry}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={() => setShowManualEntry(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Manual Entry</Text>
+                
+                <Text style={styles.inputLabel}>Student ID:</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={manualStudentId}
+                  onChangeText={setManualStudentId}
+                  placeholder="Enter student ID"
+                  placeholderTextColor="#999"
+                  keyboardType="number-pad"
+                />
+                
+                <Text style={styles.inputLabel}>Answers (comma separated):</Text>
+                <TextInput
+                  style={[styles.textInput, styles.textInputMultiline]}
+                  value={manualAnswers}
+                  onChangeText={setManualAnswers}
+                  placeholder="A,B,C,D,A,B,C,D..."
+                  placeholderTextColor="#999"
+                  multiline
+                />
+                
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.modalButtonSecondary}
+                    onPress={() => setShowManualEntry(false)}
+                  >
+                    <Text style={styles.buttonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalButtonPrimary}
+                    onPress={() => {
+                      // TODO: Submit manual entry
+                      Alert.alert('Submitted', `Student: ${manualStudentId}\nAnswers: ${manualAnswers}`)
+                      setShowManualEntry(false)
+                      navigation.goBack()
+                    }}
+                  >
+                    <Text style={styles.buttonText}>Submit</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
         </>
       )}
     </View>
@@ -980,7 +1186,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 4,
     borderColor: '#fff',
-    marginBottom: 12,
   },
   captureButtonDisabled: {
     opacity: 0.5,
@@ -1056,5 +1261,116 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    marginBottom: 12,
+  },
+  galleryButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  manualEntryButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  galleryButtonText: {
+    fontSize: 24,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1f2937',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  resultScroll: {
+    maxHeight: 300,
+    marginBottom: 16,
+  },
+  resultText: {
+    color: '#e5e7eb',
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  resultLabel: {
+    color: '#9ca3af',
+    fontSize: 14,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  answersText: {
+    color: '#e5e7eb',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButtonPrimary: {
+    flex: 1,
+    backgroundColor: '#10b981',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonSecondary: {
+    flex: 1,
+    backgroundColor: '#4b5563',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  inputLabel: {
+    color: '#9ca3af',
+    fontSize: 14,
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  textInput: {
+    backgroundColor: '#374151',
+    color: '#fff',
+    fontSize: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4b5563',
+  },
+  textInputMultiline: {
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
 })
