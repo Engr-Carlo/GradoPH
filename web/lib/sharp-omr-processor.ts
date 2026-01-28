@@ -20,26 +20,26 @@ const TEMPLATE = {
   cornerMarkerInset: 40,
   
   // Student ID grid - matches generateTemplate.ts
-  studentIdStartX: 80,
-  studentIdStartY: 200,
-  studentIdBubbleWidth: 14,
-  studentIdBubbleHeight: 14,
-  studentIdSpacingX: 18,
-  studentIdSpacingY: 20,
+  studentIdStartX: 45,
+  studentIdStartY: 145,
+  studentIdBubbleWidth: 12,
+  studentIdBubbleHeight: 12,
+  studentIdSpacingX: 14,
+  studentIdSpacingY: 16,
   
   // Answer grid - matches generateTemplate.ts
-  answersStartX: 380,
-  answersStartY: 200,
+  answersStartX: 45,
+  answersStartY: 320,
   
   // Bubble dimensions
-  bubbleWidth: 16,
-  bubbleHeight: 16,
-  bubbleSpacingX: 22,
-  bubbleSpacingY: 26,
+  bubbleWidth: 14,
+  bubbleHeight: 14,
+  bubbleSpacingX: 18,
+  bubbleSpacingY: 24,
   
-  // Answer section layout
+  // Answer section layout - 4 columns x 25 = 100 questions max
   questionsPerColumn: 25,
-  columnGap: 40,
+  columnWidth: 190,
   options: ['A', 'B', 'C', 'D'] as const,
 }
 
@@ -263,7 +263,7 @@ function extractAnswers(
 
   const options = TEMPLATE.options
   const questionsPerColumn = TEMPLATE.questionsPerColumn
-  const columnGap = TEMPLATE.columnGap
+  const columnWidth = TEMPLATE.columnWidth
 
   for (let q = 0; q < numQuestions; q++) {
     const col = Math.floor(q / questionsPerColumn)
@@ -276,7 +276,7 @@ function extractAnswers(
 
     for (let opt = 0; opt < options.length; opt++) {
       const bubbleX = TEMPLATE.answersStartX + 
-                      (col * (options.length * TEMPLATE.bubbleSpacingX + columnGap)) +
+                      (col * columnWidth) +
                       (opt * TEMPLATE.bubbleSpacingX)
       const bubbleY = TEMPLATE.answersStartY + (row * TEMPLATE.bubbleSpacingY)
 

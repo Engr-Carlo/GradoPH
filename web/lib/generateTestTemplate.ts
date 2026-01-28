@@ -14,25 +14,30 @@ export const OMR_TEMPLATE = {
   width: 850,
   height: 1100,
   cornerMarkerInset: 40,
+  cornerMarkerSize: 20,
   
   // Student ID grid - matches OMR processor
-  studentIdStartX: 110,
-  studentIdStartY: 250,
+  studentIdStartX: 45,
+  studentIdStartY: 145,
+  studentIdBubbleWidth: 12,
+  studentIdBubbleHeight: 12,
+  studentIdSpacingX: 14,
+  studentIdSpacingY: 16,
   
   // Answer grid - matches OMR processor  
-  answersStartX: 460,
-  answersStartY: 250,
+  answersStartX: 45,
+  answersStartY: 320,
   
   // Bubble dimensions - matches OMR processor
-  bubbleWidth: 18,
-  bubbleHeight: 18,
-  bubbleSpacingX: 25,
-  bubbleSpacingY: 30,
+  bubbleWidth: 14,
+  bubbleHeight: 14,
+  bubbleSpacingX: 18,
+  bubbleSpacingY: 24,
   
   // Options - 4 choices only (A-D) - matches OMR processor
   options: ['A', 'B', 'C', 'D'] as const,
   questionsPerColumn: 25,
-  columnGap: 50,
+  columnWidth: 190,
 }
 
 export interface TestTemplateConfig {
@@ -97,7 +102,7 @@ export async function generateTestTemplatePDF(config: TestTemplateConfig): Promi
 
 function drawCornerMarkers(doc: jsPDF, scaleX: number, scaleY: number) {
   const inset = OMR_TEMPLATE.cornerMarkerInset
-  const size = 22
+  const size = OMR_TEMPLATE.cornerMarkerSize
   
   const corners = [
     { x: inset, y: inset },
@@ -135,10 +140,10 @@ function drawStudentIdSection(
 ) {
   const startX = OMR_TEMPLATE.studentIdStartX * scaleX
   const startY = OMR_TEMPLATE.studentIdStartY * scaleY
-  const bubbleW = OMR_TEMPLATE.bubbleWidth * scaleX
-  const bubbleH = OMR_TEMPLATE.bubbleHeight * scaleY
-  const spacingX = OMR_TEMPLATE.bubbleSpacingX * scaleX
-  const spacingY = OMR_TEMPLATE.bubbleSpacingY * scaleY
+  const bubbleW = OMR_TEMPLATE.studentIdBubbleWidth * scaleX
+  const bubbleH = OMR_TEMPLATE.studentIdBubbleHeight * scaleY
+  const spacingX = OMR_TEMPLATE.studentIdSpacingX * scaleX
+  const spacingY = OMR_TEMPLATE.studentIdSpacingY * scaleY
   
   // Section label
   doc.setFontSize(10)
@@ -213,17 +218,16 @@ function drawAnswerSection(
     doc.text(opt, x, startY - 4, { align: 'center' })
   })
   
-  // Column gap in mm
-  const columnGapMM = OMR_TEMPLATE.columnGap * scaleX
+  // Column width in mm
+  const columnWidthMM = OMR_TEMPLATE.columnWidth * scaleX
   
   // Draw questions
   for (let q = 0; q < numQuestions; q++) {
     const col = Math.floor(q / qPerCol)
     const row = q % qPerCol
     
-    // Column offset (each column has 4 bubbles + gap)
-    const columnOffset = col * (4 * spacingX + columnGapMM)
-    const qStartX = startX + columnOffset
+    // Column offset using columnWidth
+    const qStartX = startX + col * columnWidthMM
     const qStartY = startY + row * spacingY
     
     // Draw question number
@@ -430,7 +434,7 @@ function drawStudentIdCanvas(ctx: CanvasRenderingContext2D, studentId: string, f
 }
 
 function drawAnswersCanvas(ctx: CanvasRenderingContext2D, answers: string[], numQ: number, fill: boolean) {
-  const { answersStartX: startX, answersStartY: startY, bubbleWidth: w, bubbleHeight: h, bubbleSpacingX: spX, bubbleSpacingY: spY, questionsPerColumn: qPerCol, options, columnGap } = OMR_TEMPLATE
+  const { answersStartX: startX, answersStartY: startY, bubbleWidth: w, bubbleHeight: h, bubbleSpacingX: spX, bubbleSpacingY: spY, questionsPerColumn: qPerCol, options, columnWidth } = OMR_TEMPLATE
   
   // Label
   ctx.font = 'bold 14px Arial'
@@ -450,9 +454,8 @@ function drawAnswersCanvas(ctx: CanvasRenderingContext2D, answers: string[], num
     const col = Math.floor(q / qPerCol)
     const row = q % qPerCol
     
-    // 4 options per column + gap
-    const colOffset = col * (4 * spX + columnGap)
-    const qStartX = startX + colOffset
+    // Use columnWidth for column offset
+    const qStartX = startX + col * columnWidth
     const qStartY = startY + row * spY
     
     // Question number

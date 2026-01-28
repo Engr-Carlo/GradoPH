@@ -1,14 +1,14 @@
 /**
- * Template Generator - FIXED LAYOUT v2
+ * Template Generator - FIXED LAYOUT v3
  * 
- * Professional OMR bubble sheet with proper layout:
+ * Professional OMR bubble sheet supporting up to 100 questions:
  * - QR code in header area (top-right)
- * - Compact Student ID section
- * - Answer bubbles fit within page margins
+ * - Compact horizontal Student ID section
+ * - Answer bubbles in 4 columns (25 questions each)
  * - Clean professional appearance
  * 
  * Canvas size: 850 x 1100 pixels (letter size proportions)
- * Safe margins: 60px from each edge
+ * Safe margins: 40px from each edge
  */
 
 import QRCode from 'qrcode'
@@ -20,34 +20,39 @@ export const TEMPLATE_CONFIG = {
   height: 1100,
   
   // Safe margins
-  marginLeft: 60,
-  marginRight: 60,
-  marginTop: 40,
-  marginBottom: 40,
+  marginLeft: 40,
+  marginRight: 40,
+  marginTop: 35,
+  marginBottom: 35,
   
   // Corner markers for alignment detection
   cornerMarkerInset: 40,
   cornerMarkerSize: 20,
   
-  // Student ID grid position (left side, below header)
-  studentIdStartX: 80,
-  studentIdStartY: 200,
+  // Student ID grid position (horizontal row at top, below header)
+  studentIdStartX: 45,
+  studentIdStartY: 145,
   studentIdDigits: 10,
+  studentIdBubbleWidth: 12,
+  studentIdBubbleHeight: 12,
+  studentIdSpacingX: 14,
+  studentIdSpacingY: 16,
   
-  // Answer grid position (right of student ID)
-  answersStartX: 380,
-  answersStartY: 200,
+  // Answer grid position (below student ID section)
+  answersStartX: 45,
+  answersStartY: 320,
   
-  // Bubble dimensions - smaller for compact layout
-  bubbleWidth: 16,
-  bubbleHeight: 16,
-  bubbleSpacingX: 22,
-  bubbleSpacingY: 26,
+  // Bubble dimensions - compact for 4 columns
+  bubbleWidth: 14,
+  bubbleHeight: 14,
+  bubbleSpacingX: 18,
+  bubbleSpacingY: 24,
   
-  // 4 options (A-D), 25 questions per column, max 2 columns
+  // 4 options (A-D), 25 questions per column, 4 columns = 100 questions max
   options: ['A', 'B', 'C', 'D'] as const,
   questionsPerColumn: 25,
-  columnGap: 40,
+  columnGap: 25,
+  columnWidth: 190, // Width of each answer column including gap
 }
 
 export interface TemplateData {
@@ -64,7 +69,7 @@ export interface TemplateData {
  * Generate bubble sheet as both PNG and PDF
  */
 export async function generateBubbleSheetPDF(data: TemplateData): Promise<{ png: string; pdf: string }> {
-  const numQuestions = Math.min(data.num_questions || 50, 50) // Max 50 questions (2 columns x 25)
+  const numQuestions = Math.min(data.num_questions || 50, 100) // Max 100 questions (4 columns x 25)
   const idLength = Math.min(data.student_id_length || 10, 10)
   const showGrid = Boolean(data.show_grid)
   
@@ -236,30 +241,24 @@ function drawStudentIdSection(ctx: CanvasRenderingContext2D, idLength: number) {
   const { 
     studentIdStartX: startX, 
     studentIdStartY: startY, 
-    bubbleWidth, 
-    bubbleHeight, 
-    bubbleSpacingX, 
-    bubbleSpacingY 
+    studentIdBubbleWidth: idBubbleW,
+    studentIdBubbleHeight: idBubbleH,
+    studentIdSpacingX: idSpacingX,
+    studentIdSpacingY: idSpacingY,
   } = TEMPLATE_CONFIG
   
   // Section label
-  ctx.font = 'bold 11px Arial'
+  ctx.font = 'bold 10px Arial'
   ctx.fillStyle = '#000000'
   ctx.textAlign = 'left'
-  ctx.fillText('STUDENT ID', startX, startY - 15)
-  
-  // Compact bubble size for student ID
-  const idBubbleW = 14
-  const idBubbleH = 14
-  const idSpacingX = 18
-  const idSpacingY = 20
+  ctx.fillText('STUDENT ID', startX, startY - 12)
   
   // Column headers (1, 2, 3, ...)
-  ctx.font = '8px Arial'
+  ctx.font = '7px Arial'
   ctx.textAlign = 'center'
   for (let col = 0; col < idLength; col++) {
     const x = startX + col * idSpacingX + idBubbleW / 2
-    ctx.fillText(`${col + 1}`, x, startY - 3)
+    ctx.fillText(`${col + 1}`, x, startY - 2)
   }
   
   // Row labels (0-9) and bubbles
@@ -267,9 +266,9 @@ function drawStudentIdSection(ctx: CanvasRenderingContext2D, idLength: number) {
     const y = startY + digit * idSpacingY + idBubbleH / 2
     
     // Row label
-    ctx.font = '8px Arial'
+    ctx.font = '7px Arial'
     ctx.textAlign = 'right'
-    ctx.fillText(`${digit}`, startX - 5, y + 3)
+    ctx.fillText(`${digit}`, startX - 4, y + 2)
     
     // Bubbles
     for (let col = 0; col < idLength; col++) {
@@ -278,17 +277,17 @@ function drawStudentIdSection(ctx: CanvasRenderingContext2D, idLength: number) {
       ctx.beginPath()
       ctx.ellipse(bubbleX, y, idBubbleW / 2 - 1, idBubbleH / 2 - 1, 0, 0, Math.PI * 2)
       ctx.strokeStyle = '#444444'
-      ctx.lineWidth = 1
+      ctx.lineWidth = 0.8
       ctx.stroke()
     }
   }
   
   // Light border around section
-  const sectionWidth = idLength * idSpacingX + 10
-  const sectionHeight = 10 * idSpacingY + 15
+  const sectionWidth = idLength * idSpacingX + 8
+  const sectionHeight = 10 * idSpacingY + 10
   ctx.strokeStyle = '#cccccc'
   ctx.lineWidth = 0.5
-  ctx.strokeRect(startX - 12, startY - 20, sectionWidth, sectionHeight)
+  ctx.strokeRect(startX - 10, startY - 18, sectionWidth, sectionHeight)
 }
 
 function drawAnswerSection(ctx: CanvasRenderingContext2D, numQuestions: number) {
@@ -301,16 +300,14 @@ function drawAnswerSection(ctx: CanvasRenderingContext2D, numQuestions: number) 
     bubbleSpacingY,
     questionsPerColumn,
     options,
-    columnGap,
-    width,
-    marginRight
+    columnWidth,
   } = TEMPLATE_CONFIG
   
   // Section label
-  ctx.font = 'bold 11px Arial'
+  ctx.font = 'bold 10px Arial'
   ctx.fillStyle = '#000000'
   ctx.textAlign = 'left'
-  ctx.fillText('ANSWERS', startX, startY - 15)
+  ctx.fillText('ANSWERS', startX, startY - 12)
   
   const numColumns = Math.ceil(numQuestions / questionsPerColumn)
   
@@ -318,17 +315,15 @@ function drawAnswerSection(ctx: CanvasRenderingContext2D, numQuestions: number) 
     const col = Math.floor(q / questionsPerColumn)
     const row = q % questionsPerColumn
     
-    // Column offset: 4 options * spacing + gap
-    const colOffset = col * (options.length * bubbleSpacingX + columnGap)
-    const qStartX = startX + colOffset
+    // Use columnWidth for consistent column spacing
+    const qStartX = startX + col * columnWidth
     const qStartY = startY + row * bubbleSpacingY
     
     // Question number
-    ctx.font = '9px Arial'
+    ctx.font = '8px Arial'
     ctx.textAlign = 'right'
     ctx.fillStyle = '#000000'
-    const qNumWidth = q + 1 >= 10 ? 18 : 12
-    ctx.fillText(`${q + 1}.`, qStartX - 3, qStartY + bubbleHeight / 2 + 3)
+    ctx.fillText(`${q + 1}.`, qStartX - 2, qStartY + bubbleHeight / 2 + 2)
     
     // Option bubbles (A, B, C, D)
     for (let opt = 0; opt < options.length; opt++) {
@@ -338,16 +333,16 @@ function drawAnswerSection(ctx: CanvasRenderingContext2D, numQuestions: number) 
       ctx.beginPath()
       ctx.ellipse(bubbleX, bubbleY, bubbleWidth / 2 - 1, bubbleHeight / 2 - 1, 0, 0, Math.PI * 2)
       ctx.strokeStyle = '#444444'
-      ctx.lineWidth = 1
+      ctx.lineWidth = 0.8
       ctx.stroke()
     }
     
     // Option labels for first row of each column
     if (row === 0) {
-      ctx.font = '8px Arial'
+      ctx.font = '7px Arial'
       ctx.textAlign = 'center'
       options.forEach((opt, i) => {
-        ctx.fillText(opt, qStartX + i * bubbleSpacingX + bubbleWidth / 2, qStartY - 5)
+        ctx.fillText(opt, qStartX + i * bubbleSpacingX + bubbleWidth / 2, qStartY - 4)
       })
     }
   }

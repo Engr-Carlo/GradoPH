@@ -197,10 +197,13 @@ export function validateCorners(
 ): { valid: boolean; issues: string[] } {
   const issues: string[] = []
   
-  // Check that corners are within image bounds
+  // Check that corners are within image bounds (with 10% tolerance for perspective distortion)
   const allCorners = [corners.topLeft, corners.topRight, corners.bottomLeft, corners.bottomRight]
+  const toleranceX = imageWidth * 0.1
+  const toleranceY = imageHeight * 0.1
   for (const corner of allCorners) {
-    if (corner.x < 0 || corner.x > imageWidth || corner.y < 0 || corner.y > imageHeight) {
+    if (corner.x < -toleranceX || corner.x > imageWidth + toleranceX || 
+        corner.y < -toleranceY || corner.y > imageHeight + toleranceY) {
       issues.push('Corners outside image bounds')
       break
     }
@@ -216,14 +219,21 @@ export function validateCorners(
     issues.push('Left corners not left of right corners')
   }
   
-  // Check aspect ratio is reasonable (should be close to 850/1100 = 0.773)
+  // Check aspect ratio is reasonable
+  // Template is 850x1100 (portrait = 0.77), but camera may capture in landscape (1.29)
+  // Accept either orientation with tolerance
   const width = (corners.topRight.x - corners.topLeft.x + corners.bottomRight.x - corners.bottomLeft.x) / 2
   const height = (corners.bottomLeft.y - corners.topLeft.y + corners.bottomRight.y - corners.topRight.y) / 2
   const aspectRatio = width / height
-  const expectedRatio = 850 / 1100
+  const portraitRatio = 850 / 1100  // 0.77
+  const landscapeRatio = 1100 / 850 // 1.29
   
-  if (aspectRatio < expectedRatio * 0.7 || aspectRatio > expectedRatio * 1.3) {
-    issues.push(`Aspect ratio ${aspectRatio.toFixed(2)} is too far from expected ${expectedRatio.toFixed(2)}`)
+  // Accept if close to portrait OR landscape ratio (with 40% tolerance)
+  const isValidPortrait = aspectRatio >= portraitRatio * 0.6 && aspectRatio <= portraitRatio * 1.4
+  const isValidLandscape = aspectRatio >= landscapeRatio * 0.6 && aspectRatio <= landscapeRatio * 1.4
+  
+  if (!isValidPortrait && !isValidLandscape) {
+    issues.push(`Aspect ratio ${aspectRatio.toFixed(2)} is not close to portrait (${portraitRatio.toFixed(2)}) or landscape (${landscapeRatio.toFixed(2)})`)
   }
   
   // Check minimum size (at least 30% of image)
