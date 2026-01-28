@@ -131,9 +131,6 @@ function ExamsContent() {
         student_id_length: schoolData.student_id_length,
         num_questions: exam.answer_key_json.length, // use answer key length
         show_grid: showGrid,
-        layout: {
-          qr: { x: -375, y: -450 }
-        }
       })
       
       setPreviewImageUrl(result.png)
