@@ -1,58 +1,80 @@
 /**
- * Template Generator - FIXED LAYOUT v3
+ * Professional OMR Bubble Sheet Template Generator
  * 
- * Professional OMR bubble sheet supporting up to 100 questions:
- * - QR code in header area (top-right)
- * - Compact horizontal Student ID section
- * - Answer bubbles in 4 columns (25 questions each)
- * - Clean professional appearance
+ * Creates clean, scannable bubble sheets similar to Scantron forms.
+ * Supports up to 100 questions (4 columns × 25 rows)
  * 
- * Canvas size: 850 x 1100 pixels (letter size proportions)
- * Safe margins: 40px from each edge
+ * Layout (850 × 1100 pixels - Letter size proportions):
+ * ┌─────────────────────────────────────────────────────────┐
+ * │ [■]                    HEADER                      [■] │
+ * │     Exam Name | Class | Date              [QR CODE]    │
+ * │─────────────────────────────────────────────────────────│
+ * │  NAME: _________________  SECTION: ______  DATE: ____  │
+ * │─────────────────────────────────────────────────────────│
+ * │  STUDENT ID                                             │
+ * │    1   2   3   4   5   6   7   8   9   10              │
+ * │  ⓪ ⓪ ⓪ ⓪ ⓪ ⓪ ⓪ ⓪ ⓪ ⓪                │
+ * │  ① ① ① ① ① ① ① ① ① ①                │
+ * │  ...                                                    │
+ * │─────────────────────────────────────────────────────────│
+ * │  ANSWERS                                                │
+ * │   1-25        26-50       51-75       76-100           │
+ * │  1.ⒶⒷⒸⒹ  26.ⒶⒷⒸⒹ  51.ⒶⒷⒸⒹ  76.ⒶⒷⒸⒹ         │
+ * │  ...                                                    │
+ * │ [■]                   FOOTER                       [■] │
+ * └─────────────────────────────────────────────────────────┘
  */
 
 import QRCode from 'qrcode'
 import jsPDF from 'jspdf'
 
-// Fixed template layout - MUST match sharp-omr-processor.ts exactly
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEMPLATE CONFIGURATION - These values MUST match sharp-omr-processor.ts
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export const TEMPLATE_CONFIG = {
+  // Canvas dimensions (Letter size proportions)
   width: 850,
   height: 1100,
   
-  // Safe margins
-  marginLeft: 40,
-  marginRight: 40,
-  marginTop: 35,
-  marginBottom: 35,
+  // Margins
+  margin: 50,
   
   // Corner markers for alignment detection
-  cornerMarkerInset: 40,
-  cornerMarkerSize: 20,
+  cornerMarker: {
+    inset: 30,
+    size: 24,
+  },
   
-  // Student ID grid position (horizontal row at top, below header)
-  studentIdStartX: 45,
-  studentIdStartY: 145,
-  studentIdDigits: 10,
-  studentIdBubbleWidth: 12,
-  studentIdBubbleHeight: 12,
-  studentIdSpacingX: 14,
-  studentIdSpacingY: 16,
+  // ─────────────────────────────────────────────────────────────────────────────
+  // STUDENT ID SECTION
+  // Position: Left side, starting at Y=220
+  // Layout: 10 columns (positions 1-10) × 10 rows (digits 0-9)
+  // ─────────────────────────────────────────────────────────────────────────────
+  studentId: {
+    startX: 60,
+    startY: 220,
+    bubbleRadius: 8,
+    spacingX: 24,
+    spacingY: 22,
+    digits: 10,
+  },
   
-  // Answer grid position (below student ID section)
-  answersStartX: 45,
-  answersStartY: 320,
-  
-  // Bubble dimensions - compact for 4 columns
-  bubbleWidth: 14,
-  bubbleHeight: 14,
-  bubbleSpacingX: 18,
-  bubbleSpacingY: 24,
-  
-  // 4 options (A-D), 25 questions per column, 4 columns = 100 questions max
-  options: ['A', 'B', 'C', 'D'] as const,
-  questionsPerColumn: 25,
-  columnGap: 25,
-  columnWidth: 190, // Width of each answer column including gap
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ANSWERS SECTION
+  // Position: Below student ID, starting at Y=500
+  // Layout: 4 columns × 25 questions each = 100 questions max
+  // ─────────────────────────────────────────────────────────────────────────────
+  answers: {
+    startX: 60,
+    startY: 500,
+    bubbleRadius: 7,
+    spacingX: 20,
+    spacingY: 22,
+    columnWidth: 200,
+    questionsPerColumn: 25,
+    options: ['A', 'B', 'C', 'D'] as const,
+  },
 }
 
 export interface TemplateData {
@@ -60,7 +82,7 @@ export interface TemplateData {
   exam_name: string
   class_name: string
   exam_date: string
-  student_id_length: number
+  student_id_length?: number
   num_questions?: number
   show_grid?: boolean
 }
@@ -69,27 +91,30 @@ export interface TemplateData {
  * Generate bubble sheet as both PNG and PDF
  */
 export async function generateBubbleSheetPDF(data: TemplateData): Promise<{ png: string; pdf: string }> {
-  const numQuestions = Math.min(data.num_questions || 50, 100) // Max 100 questions (4 columns x 25)
+  const numQuestions = Math.min(data.num_questions || 50, 100)
   const idLength = Math.min(data.student_id_length || 10, 10)
   const showGrid = Boolean(data.show_grid)
   
+  const { width, height } = TEMPLATE_CONFIG
+  
   const canvas = document.createElement('canvas')
-  canvas.width = TEMPLATE_CONFIG.width
-  canvas.height = TEMPLATE_CONFIG.height
+  canvas.width = width
+  canvas.height = height
   const ctx = canvas.getContext('2d')!
   
   // White background
   ctx.fillStyle = '#FFFFFF'
-  ctx.fillRect(0, 0, TEMPLATE_CONFIG.width, TEMPLATE_CONFIG.height)
+  ctx.fillRect(0, 0, width, height)
   
   // Optional debug grid
   if (showGrid) {
     drawDebugGrid(ctx)
   }
   
-  // Draw all elements
+  // Draw template elements
   drawCornerMarkers(ctx)
   await drawHeader(ctx, data)
+  drawWriteInFields(ctx)
   drawStudentIdSection(ctx, idLength)
   drawAnswerSection(ctx, numQuestions)
   drawFooter(ctx)
@@ -101,260 +126,286 @@ export async function generateBubbleSheetPDF(data: TemplateData): Promise<{ png:
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'px',
-    format: [TEMPLATE_CONFIG.width, TEMPLATE_CONFIG.height]
+    format: [width, height],
   })
-  pdf.addImage(pngDataUrl, 'PNG', 0, 0, TEMPLATE_CONFIG.width, TEMPLATE_CONFIG.height)
+  pdf.addImage(pngDataUrl, 'PNG', 0, 0, width, height)
   const pdfDataUrl = pdf.output('dataurlstring')
   
   return { png: pngDataUrl, pdf: pdfDataUrl }
 }
 
-// ===== Drawing Functions =====
+// ═══════════════════════════════════════════════════════════════════════════════
+// DRAWING FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function drawDebugGrid(ctx: CanvasRenderingContext2D) {
-  const { width, height, marginLeft, marginRight, marginTop, marginBottom } = TEMPLATE_CONFIG
+  const { width, height } = TEMPLATE_CONFIG
   
   ctx.save()
-  ctx.strokeStyle = '#ddd'
+  ctx.strokeStyle = '#eee'
   ctx.lineWidth = 0.5
   
-  // Draw grid lines every 50px
   for (let x = 0; x <= width; x += 50) {
     ctx.beginPath()
     ctx.moveTo(x, 0)
     ctx.lineTo(x, height)
     ctx.stroke()
+    ctx.fillStyle = '#ccc'
+    ctx.font = '8px Arial'
+    ctx.fillText(String(x), x + 2, 10)
   }
+  
   for (let y = 0; y <= height; y += 50) {
     ctx.beginPath()
     ctx.moveTo(0, y)
     ctx.lineTo(width, y)
     ctx.stroke()
+    ctx.fillStyle = '#ccc'
+    ctx.font = '8px Arial'
+    ctx.fillText(String(y), 2, y + 10)
   }
-  
-  // Draw safe area
-  ctx.strokeStyle = '#f00'
-  ctx.lineWidth = 1
-  ctx.strokeRect(marginLeft, marginTop, width - marginLeft - marginRight, height - marginTop - marginBottom)
   
   ctx.restore()
 }
 
 function drawCornerMarkers(ctx: CanvasRenderingContext2D) {
-  const { width, height, cornerMarkerInset: inset, cornerMarkerSize: size } = TEMPLATE_CONFIG
+  const { width, height, cornerMarker } = TEMPLATE_CONFIG
+  const { inset, size } = cornerMarker
   
-  const corners = [
+  const positions = [
     { x: inset, y: inset },
     { x: width - inset - size, y: inset },
     { x: inset, y: height - inset - size },
     { x: width - inset - size, y: height - inset - size },
   ]
   
-  corners.forEach(corner => {
+  positions.forEach(pos => {
     // Black outer square
     ctx.fillStyle = '#000000'
-    ctx.fillRect(corner.x, corner.y, size, size)
+    ctx.fillRect(pos.x, pos.y, size, size)
     
     // White inner square
+    const innerInset = size * 0.3
     ctx.fillStyle = '#FFFFFF'
-    const innerOffset = Math.floor(size * 0.25)
-    const innerSize = Math.floor(size * 0.5)
-    ctx.fillRect(corner.x + innerOffset, corner.y + innerOffset, innerSize, innerSize)
+    ctx.fillRect(pos.x + innerInset, pos.y + innerInset, size - innerInset * 2, size - innerInset * 2)
     
     // Black center dot
     ctx.fillStyle = '#000000'
     ctx.beginPath()
-    ctx.arc(corner.x + size / 2, corner.y + size / 2, 2, 0, Math.PI * 2)
+    ctx.arc(pos.x + size / 2, pos.y + size / 2, size * 0.15, 0, Math.PI * 2)
     ctx.fill()
   })
 }
 
 async function drawHeader(ctx: CanvasRenderingContext2D, data: TemplateData) {
-  const { width, marginLeft, marginRight } = TEMPLATE_CONFIG
-  const headerY = 70
+  const { width, margin, cornerMarker } = TEMPLATE_CONFIG
+  const headerY = 75
   
-  // QR Code (top-right, integrated into header)
+  // Exam title
+  ctx.fillStyle = '#000000'
+  ctx.font = 'bold 28px Arial'
+  ctx.textAlign = 'left'
+  ctx.fillText(data.exam_name, margin, headerY)
+  
+  // Subtitle
+  ctx.font = '14px Arial'
+  ctx.fillStyle = '#444444'
+  ctx.fillText(`${data.class_name} | ${data.exam_date}`, margin, headerY + 25)
+  
+  // QR Code
   try {
-    const qrData = JSON.stringify({
-      id: data.exam_id,
-      n: data.exam_name.substring(0, 20),
-    })
+    const qrSize = 80
+    const qrX = width - margin - qrSize
+    const qrY = cornerMarker.inset + cornerMarker.size + 10
+    
+    const qrData = JSON.stringify({ id: data.exam_id, n: data.exam_name.substring(0, 20) })
     const qrCanvas = await QRCode.toCanvas(qrData, { 
-      width: 70, 
+      width: qrSize, 
       margin: 1,
-      errorCorrectionLevel: 'L'
+      errorCorrectionLevel: 'M',
     })
-    ctx.drawImage(qrCanvas, width - marginRight - 75, 65, 70, 70)
+    ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize)
   } catch (e) {
     console.error('QR generation failed:', e)
   }
   
-  // Title (left-aligned, next to QR)
-  ctx.fillStyle = '#000000'
-  ctx.font = 'bold 22px Arial'
-  ctx.textAlign = 'left'
-  ctx.fillText(data.exam_name, marginLeft, headerY)
-  
-  ctx.font = '13px Arial'
-  ctx.fillStyle = '#444444'
-  ctx.fillText(`${data.class_name} | ${data.exam_date}`, marginLeft, headerY + 20)
-  
-  // Horizontal line below header
-  ctx.strokeStyle = '#cccccc'
+  // Separator line
+  ctx.strokeStyle = '#000000'
   ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.moveTo(marginLeft, 150)
-  ctx.lineTo(width - marginRight, 150)
+  ctx.moveTo(margin, 115)
+  ctx.lineTo(width - margin, 115)
   ctx.stroke()
+}
+
+function drawWriteInFields(ctx: CanvasRenderingContext2D) {
+  const { width, margin } = TEMPLATE_CONFIG
+  const y = 145
   
-  // Write-in fields row
-  const fieldY = 165
+  ctx.font = '12px Arial'
   ctx.fillStyle = '#000000'
-  ctx.font = '10px Arial'
   ctx.textAlign = 'left'
   
-  // Name field
-  ctx.fillText('NAME:', marginLeft, fieldY)
-  ctx.strokeStyle = '#888888'
+  // NAME
+  ctx.fillText('NAME:', margin, y)
+  ctx.strokeStyle = '#666666'
   ctx.lineWidth = 0.5
   ctx.beginPath()
-  ctx.moveTo(marginLeft + 40, fieldY + 2)
-  ctx.lineTo(marginLeft + 250, fieldY + 2)
+  ctx.moveTo(margin + 50, y + 3)
+  ctx.lineTo(margin + 280, y + 3)
   ctx.stroke()
   
-  // Section field
-  ctx.fillText('SECTION:', marginLeft + 270, fieldY)
+  // SECTION
+  ctx.fillText('SECTION:', margin + 310, y)
   ctx.beginPath()
-  ctx.moveTo(marginLeft + 330, fieldY + 2)
-  ctx.lineTo(marginLeft + 450, fieldY + 2)
+  ctx.moveTo(margin + 380, y + 3)
+  ctx.lineTo(margin + 500, y + 3)
   ctx.stroke()
   
-  // Date field
-  ctx.fillText('DATE:', marginLeft + 480, fieldY)
+  // DATE
+  ctx.fillText('DATE:', margin + 530, y)
   ctx.beginPath()
-  ctx.moveTo(marginLeft + 515, fieldY + 2)
-  ctx.lineTo(width - marginRight - 80, fieldY + 2)
+  ctx.moveTo(margin + 575, y + 3)
+  ctx.lineTo(width - margin, y + 3)
   ctx.stroke()
 }
 
 function drawStudentIdSection(ctx: CanvasRenderingContext2D, idLength: number) {
-  const { 
-    studentIdStartX: startX, 
-    studentIdStartY: startY, 
-    studentIdBubbleWidth: idBubbleW,
-    studentIdBubbleHeight: idBubbleH,
-    studentIdSpacingX: idSpacingX,
-    studentIdSpacingY: idSpacingY,
-  } = TEMPLATE_CONFIG
+  const { studentId } = TEMPLATE_CONFIG
+  const { startX, startY, bubbleRadius, spacingX, spacingY } = studentId
   
-  // Section label
-  ctx.font = 'bold 10px Arial'
+  // Section title
   ctx.fillStyle = '#000000'
+  ctx.font = 'bold 14px Arial'
   ctx.textAlign = 'left'
-  ctx.fillText('STUDENT ID', startX, startY - 12)
+  ctx.fillText('STUDENT ID', startX, startY - 30)
   
-  // Column headers (1, 2, 3, ...)
-  ctx.font = '7px Arial'
+  // Column headers
+  ctx.font = 'bold 10px Arial'
   ctx.textAlign = 'center'
   for (let col = 0; col < idLength; col++) {
-    const x = startX + col * idSpacingX + idBubbleW / 2
-    ctx.fillText(`${col + 1}`, x, startY - 2)
+    const x = startX + col * spacingX + bubbleRadius
+    ctx.fillText(String(col + 1), x, startY - 10)
   }
   
-  // Row labels (0-9) and bubbles
+  // Bubble grid
   for (let digit = 0; digit <= 9; digit++) {
-    const y = startY + digit * idSpacingY + idBubbleH / 2
+    const y = startY + digit * spacingY + bubbleRadius
     
     // Row label
-    ctx.font = '7px Arial'
+    ctx.font = 'bold 10px Arial'
     ctx.textAlign = 'right'
-    ctx.fillText(`${digit}`, startX - 4, y + 2)
+    ctx.fillStyle = '#000000'
+    ctx.fillText(String(digit), startX - 8, y + 4)
     
     // Bubbles
     for (let col = 0; col < idLength; col++) {
-      const bubbleX = startX + col * idSpacingX + idBubbleW / 2
-      
-      ctx.beginPath()
-      ctx.ellipse(bubbleX, y, idBubbleW / 2 - 1, idBubbleH / 2 - 1, 0, 0, Math.PI * 2)
-      ctx.strokeStyle = '#444444'
-      ctx.lineWidth = 0.8
-      ctx.stroke()
+      const x = startX + col * spacingX + bubbleRadius
+      drawBubble(ctx, x, y, bubbleRadius)
     }
   }
   
-  // Light border around section
-  const sectionWidth = idLength * idSpacingX + 8
-  const sectionHeight = 10 * idSpacingY + 10
-  ctx.strokeStyle = '#cccccc'
-  ctx.lineWidth = 0.5
-  ctx.strokeRect(startX - 10, startY - 18, sectionWidth, sectionHeight)
+  // Border
+  const sectionWidth = idLength * spacingX + 20
+  const sectionHeight = 10 * spacingY + 30
+  ctx.strokeStyle = '#999999'
+  ctx.lineWidth = 1
+  ctx.strokeRect(startX - 15, startY - 45, sectionWidth, sectionHeight)
 }
 
 function drawAnswerSection(ctx: CanvasRenderingContext2D, numQuestions: number) {
-  const { 
-    answersStartX: startX, 
-    answersStartY: startY,
-    bubbleWidth,
-    bubbleHeight,
-    bubbleSpacingX,
-    bubbleSpacingY,
-    questionsPerColumn,
-    options,
-    columnWidth,
-  } = TEMPLATE_CONFIG
+  const { answers, width, margin } = TEMPLATE_CONFIG
+  const { startX, startY, bubbleRadius, spacingX, spacingY, columnWidth, questionsPerColumn, options } = answers
   
-  // Section label
-  ctx.font = 'bold 10px Arial'
+  // Section title
   ctx.fillStyle = '#000000'
+  ctx.font = 'bold 14px Arial'
   ctx.textAlign = 'left'
-  ctx.fillText('ANSWERS', startX, startY - 12)
+  ctx.fillText('ANSWERS - Fill in the bubble completely using #2 pencil', startX, startY - 30)
+  
+  // Separator
+  ctx.strokeStyle = '#000000'
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(startX, startY - 15)
+  ctx.lineTo(width - margin, startY - 15)
+  ctx.stroke()
   
   const numColumns = Math.ceil(numQuestions / questionsPerColumn)
   
+  // Column headers
+  ctx.font = 'bold 10px Arial'
+  ctx.textAlign = 'center'
+  
+  for (let col = 0; col < numColumns; col++) {
+    const colStartX = startX + col * columnWidth + 25
+    
+    // Range label
+    const startQ = col * questionsPerColumn + 1
+    const endQ = Math.min((col + 1) * questionsPerColumn, numQuestions)
+    ctx.fillStyle = '#666666'
+    ctx.font = '10px Arial'
+    ctx.fillText(`${startQ}-${endQ}`, colStartX + (options.length * spacingX) / 2, startY - 5)
+    
+    // Option labels
+    ctx.fillStyle = '#000000'
+    ctx.font = 'bold 9px Arial'
+    for (let opt = 0; opt < options.length; opt++) {
+      ctx.fillText(options[opt], colStartX + opt * spacingX, startY + 10)
+    }
+  }
+  
+  // Questions
   for (let q = 0; q < numQuestions; q++) {
     const col = Math.floor(q / questionsPerColumn)
     const row = q % questionsPerColumn
     
-    // Use columnWidth for consistent column spacing
     const qStartX = startX + col * columnWidth
-    const qStartY = startY + row * bubbleSpacingY
+    const qStartY = startY + 20 + row * spacingY
     
     // Question number
-    ctx.font = '8px Arial'
+    ctx.font = '10px Arial'
     ctx.textAlign = 'right'
     ctx.fillStyle = '#000000'
-    ctx.fillText(`${q + 1}.`, qStartX - 2, qStartY + bubbleHeight / 2 + 2)
+    ctx.fillText(`${q + 1}.`, qStartX + 20, qStartY + bubbleRadius + 4)
     
-    // Option bubbles (A, B, C, D)
+    // Bubbles
     for (let opt = 0; opt < options.length; opt++) {
-      const bubbleX = qStartX + opt * bubbleSpacingX + bubbleWidth / 2
-      const bubbleY = qStartY + bubbleHeight / 2
-      
-      ctx.beginPath()
-      ctx.ellipse(bubbleX, bubbleY, bubbleWidth / 2 - 1, bubbleHeight / 2 - 1, 0, 0, Math.PI * 2)
-      ctx.strokeStyle = '#444444'
-      ctx.lineWidth = 0.8
-      ctx.stroke()
-    }
-    
-    // Option labels for first row of each column
-    if (row === 0) {
-      ctx.font = '7px Arial'
-      ctx.textAlign = 'center'
-      options.forEach((opt, i) => {
-        ctx.fillText(opt, qStartX + i * bubbleSpacingX + bubbleWidth / 2, qStartY - 4)
-      })
+      const x = qStartX + 25 + opt * spacingX + bubbleRadius
+      const y = qStartY + bubbleRadius
+      drawBubble(ctx, x, y, bubbleRadius)
     }
   }
 }
 
-function drawFooter(ctx: CanvasRenderingContext2D) {
-  const { width, height, marginLeft, marginRight, marginBottom } = TEMPLATE_CONFIG
-  const footerY = height - marginBottom - 10
+function drawBubble(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, filled: boolean = false) {
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, Math.PI * 2)
   
-  ctx.font = '8px Arial'
-  ctx.fillStyle = '#888888'
+  if (filled) {
+    ctx.fillStyle = '#000000'
+    ctx.fill()
+  } else {
+    ctx.strokeStyle = '#333333'
+    ctx.lineWidth = 1.2
+    ctx.stroke()
+  }
+}
+
+function drawFooter(ctx: CanvasRenderingContext2D) {
+  const { width, height, margin } = TEMPLATE_CONFIG
+  const footerY = height - 40
+  
+  ctx.strokeStyle = '#cccccc'
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(margin, footerY - 15)
+  ctx.lineTo(width - margin, footerY - 15)
+  ctx.stroke()
+  
+  ctx.font = '10px Arial'
+  ctx.fillStyle = '#666666'
   ctx.textAlign = 'center'
-  ctx.fillText('Use #2 pencil. Fill bubbles completely. Erase cleanly.', width / 2, footerY)
-  ctx.fillText('DO NOT fold or crease. Print at 100% scale.', width / 2, footerY + 12)
+  ctx.fillText('Use #2 pencil only. Fill bubbles completely. Erase cleanly. Do not fold or crease.', width / 2, footerY)
+  ctx.fillText('Print at 100% scale for accurate scanning.', width / 2, footerY + 14)
 }

@@ -4,43 +4,43 @@
  * High-performance image processing for bubble sheet scanning.
  * Works on Vercel with Next.js 15.1.11+.
  * 
- * Template specifications:
- * - Image size: 850 x 1100 pixels
- * - Corner markers: 40px inset from edges
- * - Student ID: 10 columns of digits (0-9)
- * - Answers: 5 options per question (A-E)
+ * IMPORTANT: These coordinates MUST match generateTemplate.ts exactly!
  */
 
 import sharp from 'sharp'
 
-// Template layout constants - MUST match generateTemplate.ts exactly
+// ═══════════════════════════════════════════════════════════════════════════════
+// Template layout constants - MUST match generateTemplate.ts TEMPLATE_CONFIG
+// ═══════════════════════════════════════════════════════════════════════════════
 const TEMPLATE = {
   width: 850,
   height: 1100,
-  cornerMarkerInset: 40,
   
-  // Student ID grid - matches generateTemplate.ts
-  studentIdStartX: 45,
-  studentIdStartY: 145,
-  studentIdBubbleWidth: 12,
-  studentIdBubbleHeight: 12,
-  studentIdSpacingX: 14,
-  studentIdSpacingY: 16,
+  // Corner markers
+  cornerMarkerInset: 30,
+  cornerMarkerSize: 24,
   
-  // Answer grid - matches generateTemplate.ts
-  answersStartX: 45,
-  answersStartY: 320,
+  // Student ID grid - matches generateTemplate.ts studentId section
+  studentId: {
+    startX: 60,
+    startY: 220,
+    bubbleRadius: 8,
+    spacingX: 24,
+    spacingY: 22,
+    digits: 10,
+  },
   
-  // Bubble dimensions
-  bubbleWidth: 14,
-  bubbleHeight: 14,
-  bubbleSpacingX: 18,
-  bubbleSpacingY: 24,
-  
-  // Answer section layout - 4 columns x 25 = 100 questions max
-  questionsPerColumn: 25,
-  columnWidth: 190,
-  options: ['A', 'B', 'C', 'D'] as const,
+  // Answers grid - matches generateTemplate.ts answers section
+  answers: {
+    startX: 60,
+    startY: 500,
+    bubbleRadius: 7,
+    spacingX: 20,
+    spacingY: 22,
+    columnWidth: 200,
+    questionsPerColumn: 25,
+    options: ['A', 'B', 'C', 'D'] as const,
+  },
 }
 
 export interface SharpOMRResult {
@@ -182,6 +182,9 @@ function extractStudentId(
   threshold: number,
   includeDebug: boolean = false
 ): { student_id: string; confidence: number; debug?: { col: number; digit: number; fillRatio: number }[] } {
+  const { startX, startY, bubbleRadius, spacingX, spacingY } = TEMPLATE.studentId
+  const bubbleSize = bubbleRadius * 2
+  
   const digits: string[] = []
   let totalConfidence = 0
   const debugData: { col: number; digit: number; fillRatio: number }[] = []
@@ -191,16 +194,19 @@ function extractStudentId(
     let bestFillRatio = 0
 
     for (let digit = 0; digit <= 9; digit++) {
-      const bubbleX = TEMPLATE.studentIdStartX + (col * TEMPLATE.studentIdSpacingX)
-      const bubbleY = TEMPLATE.studentIdStartY + (digit * TEMPLATE.studentIdSpacingY)
+      // Calculate bubble center, then get top-left corner for sampling
+      const bubbleCenterX = startX + col * spacingX + bubbleRadius
+      const bubbleCenterY = startY + digit * spacingY + bubbleRadius
+      const bubbleX = bubbleCenterX - bubbleRadius
+      const bubbleY = bubbleCenterY - bubbleRadius
 
       const fillRatio = getBubbleFillRatio(
         pixelData,
         width,
         bubbleX,
         bubbleY,
-        TEMPLATE.studentIdBubbleWidth,
-        TEMPLATE.studentIdBubbleHeight
+        bubbleSize,
+        bubbleSize
       )
 
       if (includeDebug) {
@@ -253,6 +259,9 @@ function extractAnswers(
   filled_percentage: number
   debug?: { option: string; fillRatio: number }[]
 }[] {
+  const { startX, startY, bubbleRadius, spacingX, spacingY, columnWidth, questionsPerColumn, options } = TEMPLATE.answers
+  const bubbleSize = bubbleRadius * 2
+  
   const answers: {
     question_number: number
     detected_answers: string[]
@@ -260,10 +269,6 @@ function extractAnswers(
     filled_percentage: number
     debug?: { option: string; fillRatio: number }[]
   }[] = []
-
-  const options = TEMPLATE.options
-  const questionsPerColumn = TEMPLATE.questionsPerColumn
-  const columnWidth = TEMPLATE.columnWidth
 
   for (let q = 0; q < numQuestions; q++) {
     const col = Math.floor(q / questionsPerColumn)
@@ -274,19 +279,24 @@ function extractAnswers(
     const debugOptions: { option: string; fillRatio: number }[] = []
     let maxFillRatio = 0
 
+    // Calculate question start position (matching template drawing logic)
+    const qStartX = startX + col * columnWidth
+    const qStartY = startY + 20 + row * spacingY  // +20 to skip header row
+
     for (let opt = 0; opt < options.length; opt++) {
-      const bubbleX = TEMPLATE.answersStartX + 
-                      (col * columnWidth) +
-                      (opt * TEMPLATE.bubbleSpacingX)
-      const bubbleY = TEMPLATE.answersStartY + (row * TEMPLATE.bubbleSpacingY)
+      // Bubble center position (matching template: qStartX + 25 + opt * spacingX + bubbleRadius)
+      const bubbleCenterX = qStartX + 25 + opt * spacingX + bubbleRadius
+      const bubbleCenterY = qStartY + bubbleRadius
+      const bubbleX = bubbleCenterX - bubbleRadius
+      const bubbleY = bubbleCenterY - bubbleRadius
 
       const fillRatio = getBubbleFillRatio(
         pixelData,
         width,
         bubbleX,
         bubbleY,
-        TEMPLATE.bubbleWidth,
-        TEMPLATE.bubbleHeight
+        bubbleSize,
+        bubbleSize
       )
 
       fillRatios.push(fillRatio)

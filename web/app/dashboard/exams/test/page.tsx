@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { generateTestTemplatePDF, generateTestTemplateCanvas, OMR_TEMPLATE, TestTemplateConfig } from '@/lib/generateTestTemplate'
-import { supabase } from '@/lib/supabase'
+import { generateTestTemplatePDF, generateTestTemplateCanvas, TestTemplateConfig, TEST_DATA } from '@/lib/generateTestTemplate'
+import { TEMPLATE_CONFIG } from '@/lib/generateTemplate'
 
 interface ScanResult {
   success: boolean
@@ -87,44 +87,17 @@ export default function ScannerTestPage() {
     setScanResult(null)
     
     try {
-      // Convert data URL to blob
-      const response = await fetch(previewImage)
-      const blob = await response.blob()
-      
-      // Get session
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        throw new Error('Not authenticated')
-      }
-      
-      // Upload to storage
-      const fileName = `test-scan-${Date.now()}.png`
-      const filePath = `test/${fileName}`
-      
-      const { error: uploadError } = await supabase.storage
-        .from('scan-images')
-        .upload(filePath, blob, {
-          contentType: 'image/png',
-          upsert: true,
-        })
-      
-      if (uploadError) {
-        throw new Error(`Upload failed: ${uploadError.message}`)
-      }
-      
-      // Call the scan API with debug mode
-      const apiResponse = await fetch('/api/scans/test', {
+      // Call the direct test API (no auth required)
+      const apiResponse = await fetch('/api/scans/test-direct', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          image_path: filePath,
+          image_base64: previewImage,
           num_questions: numQuestions,
           student_id_length: 10,
           bubble_threshold: 0.35,
-          debug: true,
         }),
       })
       
@@ -302,12 +275,12 @@ export default function ScannerTestPage() {
           <div className="bg-gray-50 rounded-lg p-4 text-sm">
             <h3 className="font-semibold mb-2">📐 Template Specifications</h3>
             <div className="grid grid-cols-2 gap-2 text-gray-600">
-              <div>Canvas: {OMR_TEMPLATE.width}×{OMR_TEMPLATE.height}px</div>
-              <div>Bubble: {OMR_TEMPLATE.bubbleWidth}×{OMR_TEMPLATE.bubbleHeight}px</div>
-              <div>Student ID: ({OMR_TEMPLATE.studentIdStartX}, {OMR_TEMPLATE.studentIdStartY})</div>
-              <div>Answers: ({OMR_TEMPLATE.answersStartX}, {OMR_TEMPLATE.answersStartY})</div>
-              <div>Spacing X: {OMR_TEMPLATE.bubbleSpacingX}px</div>
-              <div>Spacing Y: {OMR_TEMPLATE.bubbleSpacingY}px</div>
+              <div>Canvas: {TEMPLATE_CONFIG.width}×{TEMPLATE_CONFIG.height}px</div>
+              <div>Bubble Radius: {TEMPLATE_CONFIG.answers.bubbleRadius}px</div>
+              <div>Student ID: ({TEMPLATE_CONFIG.studentId.startX}, {TEMPLATE_CONFIG.studentId.startY})</div>
+              <div>Answers: ({TEMPLATE_CONFIG.answers.startX}, {TEMPLATE_CONFIG.answers.startY})</div>
+              <div>Spacing X: {TEMPLATE_CONFIG.answers.spacingX}px</div>
+              <div>Spacing Y: {TEMPLATE_CONFIG.answers.spacingY}px</div>
             </div>
           </div>
         </div>
