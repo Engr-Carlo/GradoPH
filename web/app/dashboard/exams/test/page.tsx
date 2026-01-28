@@ -26,7 +26,7 @@ interface ScanResult {
 export default function ScannerTestPage() {
   // Test configuration
   const [testStudentId, setTestStudentId] = useState('1234567890')
-  const [testAnswers, setTestAnswers] = useState<string[]>(['A', 'B', 'C', 'D', 'E', 'A', 'B', 'C', 'D', 'E'])
+  const [testAnswers, setTestAnswers] = useState<string[]>(['A', 'B', 'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B'])
   const [numQuestions, setNumQuestions] = useState(10)
   const [fillBubbles, setFillBubbles] = useState(true)
   const [showDebugGrid, setShowDebugGrid] = useState(false)
@@ -72,7 +72,7 @@ export default function ScannerTestPage() {
   }
   
   function randomizeAnswers() {
-    const options = ['A', 'B', 'C', 'D', 'E']
+    const options = ['A', 'B', 'C', 'D']
     const newAnswers = Array.from({ length: numQuestions }, () => 
       options[Math.floor(Math.random() * options.length)]
     )

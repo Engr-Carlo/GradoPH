@@ -95,15 +95,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Processing scan for exam:', exam.name, 'Questions:', numQuestions)
+    // Convert threshold: if passed as integer percentage (e.g., 50), convert to decimal (0.50)
+    // Mobile app sends integers 20-70, OMR processor expects decimals 0.20-0.70
+    let threshold = bubble_threshold || 35
+    if (threshold > 1) {
+      threshold = threshold / 100
+    }
+    
+    console.log('=== OMR SCAN DEBUG ===')
+    console.log('Exam:', exam.name)
+    console.log('Questions:', numQuestions)
+    console.log('Student ID Length:', studentIdLength)
+    console.log('Bubble Threshold:', threshold, '(original:', bubble_threshold, ')')
+    console.log('Image path:', image_path)
     
     // Process the image using Sharp-based OMR processor
     const imageBuffer = await imageData.arrayBuffer()
+    console.log('Image buffer size:', imageBuffer.byteLength, 'bytes')
+    
     const processingResult = await processWithSharp(
       Buffer.from(imageBuffer),
       numQuestions,
       studentIdLength,
-      bubble_threshold || 0.35  // Default 35% threshold
+      threshold,
+      true  // Enable debug mode for detailed logging
     )
     
     // If OMR failed, use provided student_id or generate fallback

@@ -29,9 +29,10 @@ export const OMR_TEMPLATE = {
   bubbleSpacingX: 25,
   bubbleSpacingY: 30,
   
-  // Options
-  options: ['A', 'B', 'C', 'D', 'E'] as const,
+  // Options - 4 choices only (A-D) - matches OMR processor
+  options: ['A', 'B', 'C', 'D'] as const,
   questionsPerColumn: 25,
+  columnGap: 50,
 }
 
 export interface TestTemplateConfig {
@@ -204,7 +205,7 @@ function drawAnswerSection(
   doc.setTextColor(0, 0, 0)
   doc.text('ANSWERS', startX, startY - 12)
   
-  // Draw option headers (A-E)
+  // Draw option headers (A-D)
   doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
   OMR_TEMPLATE.options.forEach((opt, i) => {
@@ -212,13 +213,16 @@ function drawAnswerSection(
     doc.text(opt, x, startY - 4, { align: 'center' })
   })
   
+  // Column gap in mm
+  const columnGapMM = OMR_TEMPLATE.columnGap * scaleX
+  
   // Draw questions
   for (let q = 0; q < numQuestions; q++) {
     const col = Math.floor(q / qPerCol)
     const row = q % qPerCol
     
-    // Column offset (each column has 5 bubbles + gap)
-    const columnOffset = col * (5 * spacingX + 15)
+    // Column offset (each column has 4 bubbles + gap)
+    const columnOffset = col * (4 * spacingX + columnGapMM)
     const qStartX = startX + columnOffset
     const qStartY = startY + row * spacingY
     
@@ -226,8 +230,8 @@ function drawAnswerSection(
     doc.setFontSize(7)
     doc.text(`${q + 1}.`, qStartX - 5, qStartY + bubbleH / 2 + 1, { align: 'right' })
     
-    // Draw option bubbles
-    for (let opt = 0; opt < 5; opt++) {
+    // Draw option bubbles (4 options: A-D)
+    for (let opt = 0; opt < 4; opt++) {
       const x = qStartX + opt * spacingX + bubbleW / 2
       const y = qStartY + bubbleH / 2
       
@@ -426,7 +430,7 @@ function drawStudentIdCanvas(ctx: CanvasRenderingContext2D, studentId: string, f
 }
 
 function drawAnswersCanvas(ctx: CanvasRenderingContext2D, answers: string[], numQ: number, fill: boolean) {
-  const { answersStartX: startX, answersStartY: startY, bubbleWidth: w, bubbleHeight: h, bubbleSpacingX: spX, bubbleSpacingY: spY, questionsPerColumn: qPerCol, options } = OMR_TEMPLATE
+  const { answersStartX: startX, answersStartY: startY, bubbleWidth: w, bubbleHeight: h, bubbleSpacingX: spX, bubbleSpacingY: spY, questionsPerColumn: qPerCol, options, columnGap } = OMR_TEMPLATE
   
   // Label
   ctx.font = 'bold 14px Arial'
@@ -434,7 +438,7 @@ function drawAnswersCanvas(ctx: CanvasRenderingContext2D, answers: string[], num
   ctx.textAlign = 'left'
   ctx.fillText('ANSWERS', startX, startY - 15)
   
-  // Option headers
+  // Option headers (A-D)
   ctx.font = '10px Arial'
   ctx.textAlign = 'center'
   options.forEach((opt, i) => {
@@ -446,7 +450,8 @@ function drawAnswersCanvas(ctx: CanvasRenderingContext2D, answers: string[], num
     const col = Math.floor(q / qPerCol)
     const row = q % qPerCol
     
-    const colOffset = col * (5 * spX + 50)
+    // 4 options per column + gap
+    const colOffset = col * (4 * spX + columnGap)
     const qStartX = startX + colOffset
     const qStartY = startY + row * spY
     
@@ -456,8 +461,8 @@ function drawAnswersCanvas(ctx: CanvasRenderingContext2D, answers: string[], num
     ctx.fillStyle = '#000000'
     ctx.fillText(`${q + 1}.`, qStartX - 5, qStartY + h / 2 + 3)
     
-    // Option bubbles
-    for (let opt = 0; opt < 5; opt++) {
+    // Option bubbles (4 options: A-D)
+    for (let opt = 0; opt < 4; opt++) {
       const x = qStartX + opt * spX + w / 2
       const y = qStartY + h / 2
       

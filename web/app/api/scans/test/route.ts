@@ -59,16 +59,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[Test Scan] Processing image: ${image_path}`)
-    console.log(`[Test Scan] Questions: ${num_questions}, ID Length: ${student_id_length}, Threshold: ${bubble_threshold}`)
+    // Convert threshold: if passed as integer percentage (e.g., 35), convert to decimal (0.35)
+    let threshold = bubble_threshold || 0.35
+    if (threshold > 1) {
+      threshold = threshold / 100
+    }
 
-    // Process with Sharp OMR
+    console.log(`[Test Scan] Processing image: ${image_path}`)
+    console.log(`[Test Scan] Questions: ${num_questions}, ID Length: ${student_id_length}, Threshold: ${threshold}`)
+
+    // Process with Sharp OMR (always enable debug in test mode)
     const imageBuffer = await imageData.arrayBuffer()
     const result = await processWithSharp(
       Buffer.from(imageBuffer),
       num_questions,
       student_id_length,
-      bubble_threshold
+      threshold,
+      true  // Always debug in test mode
     )
 
     console.log(`[Test Scan] Result - Success: ${result.success}, Confidence: ${result.confidence}%`)

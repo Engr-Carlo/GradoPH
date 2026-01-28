@@ -252,8 +252,9 @@ function extractAnswers(
     debug?: { option: string; fillRatio: number }[]
   }[] = []
 
-  const options = ['A', 'B', 'C', 'D', 'E']
+  const options = ['A', 'B', 'C', 'D']
   const questionsPerColumn = 25
+  const columnGap = 50 // Gap between answer columns
 
   for (let q = 0; q < numQuestions; q++) {
     const col = Math.floor(q / questionsPerColumn)
@@ -264,9 +265,9 @@ function extractAnswers(
     const debugOptions: { option: string; fillRatio: number }[] = []
     let maxFillRatio = 0
 
-    for (let opt = 0; opt < 5; opt++) {
+    for (let opt = 0; opt < 4; opt++) {
       const bubbleX = TEMPLATE.answersStartX + 
-                      (col * (5 * TEMPLATE.bubbleSpacingX + 50)) +
+                      (col * (4 * TEMPLATE.bubbleSpacingX + columnGap)) +
                       (opt * TEMPLATE.bubbleSpacingX)
       const bubbleY = TEMPLATE.answersStartY + (row * TEMPLATE.bubbleSpacingY)
 

@@ -20,7 +20,9 @@ import {
   getDefaultCorners, 
   checkStability, 
   resetStability,
-  Point 
+  Point,
+  detectCornersFromServer,
+  validateCorners
 } from '../lib/cornerDetection'
 import { cropToCorners } from '../lib/imageProcessor'
 import { PRODUCTION_API_URL, isDevelopment, ALWAYS_USE_PRODUCTION_API } from '../config'
@@ -228,7 +230,7 @@ export default function ScannerScreen({ route, navigation }: any) {
     }
   }
 
-  // Check if paper is properly positioned in the frame
+  // Check if paper is properly positioned in the frame using server-side detection
   async function checkPaperInFrame(
     imageUri: string,
     imageWidth: number,
@@ -237,11 +239,57 @@ export default function ScannerScreen({ route, navigation }: any) {
     // Get base corners for the template frame
     const baseCorners = getDefaultCorners(templateFrame.width, templateFrame.height, TEMPLATE_ASPECT_RATIO)
     
-    // For now, we assume if the camera captures successfully, user has positioned
-    // the paper. We provide subtle movement to corners to show "detection" is active.
-    // In the future, this can be replaced with actual corner detection.
+    // Try server-side corner detection for accurate results
+    try {
+      const result = await detectCornersFromServer(imageUri, imageWidth, imageHeight)
+      
+      if (result.success && result.corners.confidence >= 60) {
+        // Validate the detected corners
+        const validation = validateCorners(result.corners, imageWidth, imageHeight)
+        
+        if (validation.valid) {
+          // Scale corners from image coordinates to screen frame coordinates
+          const scaleX = templateFrame.width / imageWidth
+          const scaleY = templateFrame.height / imageHeight
+          
+          const scaledCorners: DetectedCorners = {
+            topLeft: { 
+              x: result.corners.topLeft.x * scaleX, 
+              y: result.corners.topLeft.y * scaleY 
+            },
+            topRight: { 
+              x: result.corners.topRight.x * scaleX, 
+              y: result.corners.topRight.y * scaleY 
+            },
+            bottomLeft: { 
+              x: result.corners.bottomLeft.x * scaleX, 
+              y: result.corners.bottomLeft.y * scaleY 
+            },
+            bottomRight: { 
+              x: result.corners.bottomRight.x * scaleX, 
+              y: result.corners.bottomRight.y * scaleY 
+            },
+            confidence: result.corners.confidence,
+            isStable: consecutiveGoodFramesRef.current >= 3,
+          }
+          
+          console.log(`Corner detection: confidence=${result.corners.confidence}%`)
+          
+          return {
+            isPaperDetected: true,
+            corners: scaledCorners,
+          }
+        } else {
+          console.log('Corner validation failed:', validation.issues)
+        }
+      }
+    } catch (error) {
+      console.log('Server corner detection failed, using fallback:', error)
+    }
     
-    const jitter = () => (Math.random() - 0.5) * 3 // Very small jitter
+    // Fallback: assume paper is in frame if we got here
+    // Add subtle jitter to show detection is active
+    const jitter = () => (Math.random() - 0.5) * 3
     
     const corners: DetectedCorners = {
       topLeft: { 
@@ -260,12 +308,10 @@ export default function ScannerScreen({ route, navigation }: any) {
         x: baseCorners.bottomRight.x + jitter(), 
         y: baseCorners.bottomRight.y + jitter() 
       },
-      confidence: 85,
+      confidence: 50, // Lower confidence for fallback
       isStable: consecutiveGoodFramesRef.current >= 3,
     }
     
-    // Consider paper "detected" for simplicity - user should position manually
-    // The real detection happens on the server with the OMR processor
     return {
       isPaperDetected: true,
       corners,

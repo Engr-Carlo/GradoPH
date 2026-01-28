@@ -33,9 +33,10 @@ export const FIXED_TEMPLATE = {
   bubbleSpacingX: 25,
   bubbleSpacingY: 30,
   
-  // 5 options (A-E) and 25 questions per column
-  options: ['A', 'B', 'C', 'D', 'E'] as const,
+  // 4 options (A-D) and 25 questions per column
+  options: ['A', 'B', 'C', 'D'] as const,
   questionsPerColumn: 25,
+  columnGap: 50,
 }
 
 export interface FixedTemplateData {
@@ -201,7 +202,7 @@ function drawStudentIdSection(doc: jsPDF, idLength: number, scaleX: number, scal
 }
 
 function drawAnswerSection(doc: jsPDF, numQuestions: number, scaleX: number, scaleY: number) {
-  const { answersStartX, answersStartY, bubbleWidth, bubbleHeight, bubbleSpacingX, bubbleSpacingY, questionsPerColumn, options } = FIXED_TEMPLATE
+  const { answersStartX, answersStartY, bubbleWidth, bubbleHeight, bubbleSpacingX, bubbleSpacingY, questionsPerColumn, options, columnGap } = FIXED_TEMPLATE
   
   const startX = answersStartX * scaleX
   const startY = answersStartY * scaleY
@@ -209,7 +210,7 @@ function drawAnswerSection(doc: jsPDF, numQuestions: number, scaleX: number, sca
   const bH = bubbleHeight * scaleY
   const spX = bubbleSpacingX * scaleX
   const spY = bubbleSpacingY * scaleY
-  const columnGap = 15 // mm gap between columns
+  const colGapMM = columnGap * scaleX // Convert column gap to mm
   
   // Label
   doc.setFontSize(11)
@@ -222,7 +223,8 @@ function drawAnswerSection(doc: jsPDF, numQuestions: number, scaleX: number, sca
     const col = Math.floor(q / questionsPerColumn)
     const row = q % questionsPerColumn
     
-    const colOffset = col * (5 * spX + columnGap)
+    // 4 options per column + gap
+    const colOffset = col * (4 * spX + colGapMM)
     const qStartX = startX + colOffset
     const qStartY = startY + row * spY
     
@@ -231,8 +233,8 @@ function drawAnswerSection(doc: jsPDF, numQuestions: number, scaleX: number, sca
     doc.setFont('helvetica', 'normal')
     doc.text(`${q + 1}.`, qStartX - 4, qStartY + bH / 2 + 1, { align: 'right' })
     
-    // Option bubbles
-    for (let opt = 0; opt < 5; opt++) {
+    // Option bubbles (4 options: A-D)
+    for (let opt = 0; opt < 4; opt++) {
       const x = qStartX + opt * spX + bW / 2
       const y = qStartY + bH / 2
       
@@ -376,7 +378,8 @@ function drawAnswersCanvas(ctx: CanvasRenderingContext2D, numQuestions: number) 
     const col = Math.floor(q / questionsPerColumn)
     const row = q % questionsPerColumn
     
-    const colOffset = col * (5 * bubbleSpacingX + columnGap)
+    // 4 options per column + gap
+    const colOffset = col * (4 * bubbleSpacingX + columnGap)
     const qStartX = answersStartX + colOffset
     const qStartY = answersStartY + row * bubbleSpacingY
     
@@ -386,8 +389,8 @@ function drawAnswersCanvas(ctx: CanvasRenderingContext2D, numQuestions: number) 
     ctx.fillStyle = '#000000'
     ctx.fillText(`${q + 1}.`, qStartX - 5, qStartY + bubbleHeight / 2 + 4)
     
-    // Option bubbles
-    for (let opt = 0; opt < 5; opt++) {
+    // Option bubbles (4 options: A-D)
+    for (let opt = 0; opt < 4; opt++) {
       const x = qStartX + opt * bubbleSpacingX + bubbleWidth / 2
       const y = qStartY + bubbleHeight / 2
       
