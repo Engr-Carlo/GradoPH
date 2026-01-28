@@ -7,27 +7,55 @@ import sharp from 'sharp'
  * Detect corner markers in a scanned bubble sheet image.
  * Returns corner positions for perspective correction.
  * 
- * The corner markers are 22x22px black squares with white inner squares,
- * positioned 40px from each edge of the 850x1100 template.
+ * Accepts either:
+ * - JSON body with { image_base64: string, width: number, height: number }
+ * - FormData with 'image' file
  */
 export async function POST(request: NextRequest) {
   try {
-    // Get image from request
-    const formData = await request.formData()
-    const imageFile = formData.get('image') as Blob
+    let imageBuffer: Buffer
+    let imgWidth = 0
+    let imgHeight = 0
     
-    if (!imageFile) {
-      return NextResponse.json(
-        { error: 'No image provided' },
-        { status: 400 }
-      )
+    // Check content type to determine how to parse
+    const contentType = request.headers.get('content-type') || ''
+    
+    if (contentType.includes('application/json')) {
+      // Parse JSON body with base64 image
+      const body = await request.json()
+      const { image_base64, width, height } = body
+      
+      if (!image_base64) {
+        return NextResponse.json(
+          { error: 'No image_base64 provided' },
+          { status: 400 }
+        )
+      }
+      
+      imageBuffer = Buffer.from(image_base64, 'base64')
+      imgWidth = width || 0
+      imgHeight = height || 0
+    } else {
+      // Parse FormData
+      const formData = await request.formData()
+      const imageFile = formData.get('image') as Blob
+      
+      if (!imageFile) {
+        return NextResponse.json(
+          { error: 'No image provided' },
+          { status: 400 }
+        )
+      }
+      
+      imageBuffer = Buffer.from(await imageFile.arrayBuffer())
     }
-
-    const imageBuffer = Buffer.from(await imageFile.arrayBuffer())
     
-    // Get image metadata
-    const metadata = await sharp(imageBuffer).metadata()
-    const { width: imgWidth = 0, height: imgHeight = 0 } = metadata
+    // Get image metadata if not provided
+    if (!imgWidth || !imgHeight) {
+      const metadata = await sharp(imageBuffer).metadata()
+      imgWidth = metadata.width || 0
+      imgHeight = metadata.height || 0
+    }
     
     console.log(`Corner detection: Processing ${imgWidth}x${imgHeight} image`)
     

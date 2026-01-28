@@ -13,25 +13,34 @@
 
 import sharp from 'sharp'
 
-// Template layout constants
+// Template layout constants - MUST match generateTemplate.ts exactly
 const TEMPLATE = {
   width: 850,
   height: 1100,
   cornerMarkerInset: 40,
   
-  // Student ID grid
-  studentIdStartX: 110,
-  studentIdStartY: 250,
+  // Student ID grid - matches generateTemplate.ts
+  studentIdStartX: 80,
+  studentIdStartY: 200,
+  studentIdBubbleWidth: 14,
+  studentIdBubbleHeight: 14,
+  studentIdSpacingX: 18,
+  studentIdSpacingY: 20,
   
-  // Answer grid
-  answersStartX: 460,
-  answersStartY: 250,
+  // Answer grid - matches generateTemplate.ts
+  answersStartX: 380,
+  answersStartY: 200,
   
   // Bubble dimensions
-  bubbleWidth: 18,
-  bubbleHeight: 18,
-  bubbleSpacingX: 25,
-  bubbleSpacingY: 30,
+  bubbleWidth: 16,
+  bubbleHeight: 16,
+  bubbleSpacingX: 22,
+  bubbleSpacingY: 26,
+  
+  // Answer section layout
+  questionsPerColumn: 25,
+  columnGap: 40,
+  options: ['A', 'B', 'C', 'D'] as const,
 }
 
 export interface SharpOMRResult {
@@ -182,16 +191,16 @@ function extractStudentId(
     let bestFillRatio = 0
 
     for (let digit = 0; digit <= 9; digit++) {
-      const bubbleX = TEMPLATE.studentIdStartX + (col * TEMPLATE.bubbleSpacingX)
-      const bubbleY = TEMPLATE.studentIdStartY + (digit * TEMPLATE.bubbleSpacingY)
+      const bubbleX = TEMPLATE.studentIdStartX + (col * TEMPLATE.studentIdSpacingX)
+      const bubbleY = TEMPLATE.studentIdStartY + (digit * TEMPLATE.studentIdSpacingY)
 
       const fillRatio = getBubbleFillRatio(
         pixelData,
         width,
         bubbleX,
         bubbleY,
-        TEMPLATE.bubbleWidth,
-        TEMPLATE.bubbleHeight
+        TEMPLATE.studentIdBubbleWidth,
+        TEMPLATE.studentIdBubbleHeight
       )
 
       if (includeDebug) {
@@ -252,9 +261,9 @@ function extractAnswers(
     debug?: { option: string; fillRatio: number }[]
   }[] = []
 
-  const options = ['A', 'B', 'C', 'D']
-  const questionsPerColumn = 25
-  const columnGap = 50 // Gap between answer columns
+  const options = TEMPLATE.options
+  const questionsPerColumn = TEMPLATE.questionsPerColumn
+  const columnGap = TEMPLATE.columnGap
 
   for (let q = 0; q < numQuestions; q++) {
     const col = Math.floor(q / questionsPerColumn)
@@ -265,9 +274,9 @@ function extractAnswers(
     const debugOptions: { option: string; fillRatio: number }[] = []
     let maxFillRatio = 0
 
-    for (let opt = 0; opt < 4; opt++) {
+    for (let opt = 0; opt < options.length; opt++) {
       const bubbleX = TEMPLATE.answersStartX + 
-                      (col * (4 * TEMPLATE.bubbleSpacingX + columnGap)) +
+                      (col * (options.length * TEMPLATE.bubbleSpacingX + columnGap)) +
                       (opt * TEMPLATE.bubbleSpacingX)
       const bubbleY = TEMPLATE.answersStartY + (row * TEMPLATE.bubbleSpacingY)
 
