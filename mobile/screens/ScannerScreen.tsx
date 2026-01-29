@@ -66,6 +66,9 @@ const calculateTemplateFrame = () => {
 // Scan modes
 type ScanMode = 'auto' | 'manual'
 
+// Scan steps - must complete in order
+type ScanStep = 'qr' | 'student_id' | 'answers' | 'complete'
+
 // Minimum consecutive good frames needed before auto-capture
 const MIN_STABLE_FRAMES = 5
 
@@ -80,16 +83,24 @@ export default function ScannerScreen({ route, navigation }: any) {
   const [croppedImage, setCroppedImage] = useState<string | null>(null)
   const cameraRef = useRef<any>(null)
   
+  // Step-based scanning state
+  const [currentStep, setCurrentStep] = useState<ScanStep>('qr')
+  const [stepResults, setStepResults] = useState<{
+    qr?: { exam_id: string; raw_data: string }
+    student_id?: { student_id: string; confidence: number }
+    answers?: { answers: string[]; answered_count: number }
+  }>({})
+  
   // Scanning state
   const [scanMode, setScanMode] = useState<ScanMode>('manual') // Default to manual for reliability
   const [showGuides, setShowGuides] = useState(true)
   const [retryCount, setRetryCount] = useState(0)
-  const [statusMessage, setStatusMessage] = useState('Tap capture when paper is aligned')
+  const [statusMessage, setStatusMessage] = useState('Step 1: Scan QR Code')
   
   // Manual entry modal
   const [showManualEntry, setShowManualEntry] = useState(false)
   const [manualStudentId, setManualStudentId] = useState('')
-  const [manualAnswers, setManualAnswers] = useState<string[]>([])
+  const [manualAnswers, setManualAnswers] = useState('')
   
   // Scan result display
   const [lastScanResult, setLastScanResult] = useState<any>(null)
@@ -511,29 +522,195 @@ export default function ScannerScreen({ route, navigation }: any) {
     }
   }
 
-  async function processAndUpload() {
+  // Get step display info
+  const getStepInfo = (step: ScanStep) => {
+    switch (step) {
+      case 'qr':
+        return { number: 1, title: 'Scan QR Code', icon: '📱', color: '#3b82f6' }
+      case 'student_id':
+        return { number: 2, title: 'Scan Student ID', icon: '🆔', color: '#f59e0b' }
+      case 'answers':
+        return { number: 3, title: 'Scan Answers', icon: '📝', color: '#10b981' }
+      case 'complete':
+        return { number: 4, title: 'Complete', icon: '✅', color: '#10b981' }
+    }
+  }
+
+  // Get API URL helper
+  const getWebApiUrl = () => {
+    if (ALWAYS_USE_PRODUCTION_API) {
+      return PRODUCTION_API_URL
+    }
+    if (!isDevelopment) {
+      return PRODUCTION_API_URL
+    }
+    const debuggerHost = Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost
+    if (debuggerHost) {
+      const host = debuggerHost.split(':').shift()
+      return `http://${host}:3000`
+    }
+    return 'http://localhost:3000'
+  }
+
+  // Process current step
+  async function processCurrentStep() {
     if (!croppedImage && !capturedImage) {
       Alert.alert('Error', 'No image captured')
       return
     }
 
     setProcessing(true)
-    setStatusMessage('Uploading...')
+    const stepInfo = getStepInfo(currentStep)
+    setStatusMessage(`Processing ${stepInfo.title}...`)
 
     try {
-      const storedThreshold = await AsyncStorage.getItem('bubble_threshold_override')
-      const bubbleThreshold = storedThreshold ? parseInt(storedThreshold, 10) : 50
+      const imageToProcess = croppedImage || capturedImage!
+      const base64 = await FileSystem.readAsStringAsync(imageToProcess, {
+        encoding: 'base64',
+      })
 
-      const timestamp = Date.now()
-      const fileName = `scan_${exam.id}_${timestamp}.jpg`
-      const filePath = `${exam.id}/${fileName}`
+      const webApiUrl = getWebApiUrl()
+      console.log(`\n=== STEP ${currentStep.toUpperCase()} ===`)
+      console.log('Using API URL:', webApiUrl)
 
-      // Use cropped image if available, otherwise use original
+      const response = await fetch(`${webApiUrl}/api/scans/step`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_base64: base64,
+          step: currentStep,
+          exam_id: exam.id,
+          num_questions: exam.num_questions || exam.answer_key_json?.length || 100,
+        }),
+      })
+
+      const result = await response.json()
+      console.log('Step result:', JSON.stringify(result, null, 2))
+
+      if (!result.success) {
+        // Step failed
+        Alert.alert(
+          `${stepInfo.icon} ${stepInfo.title} Failed`,
+          result.error + (result.hint ? `\n\n💡 ${result.hint}` : ''),
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
+            { text: 'Retry', onPress: resetForRetry },
+            currentStep === 'student_id' ? { text: 'Manual Entry', onPress: () => {
+              setManualStudentId(result.partial_id || '')
+              setShowManualEntry(true)
+            }} : null,
+          ].filter(Boolean) as any[]
+        )
+        return
+      }
+
+      // Step succeeded - save result and move to next step
+      if (currentStep === 'qr') {
+        setStepResults(prev => ({ ...prev, qr: { exam_id: result.exam_id, raw_data: result.raw_data } }))
+        setCurrentStep('student_id')
+        Alert.alert(
+          '✅ QR Code Verified!',
+          `Exam ID: ${result.exam_id}\n\n${result.message}`,
+          [{ text: 'Continue to Student ID', onPress: resetForRetry }]
+        )
+      } else if (currentStep === 'student_id') {
+        setStepResults(prev => ({ ...prev, student_id: { student_id: result.student_id, confidence: result.confidence } }))
+        
+        if (result.has_undetected) {
+          // Some digits not detected - ask to confirm
+          Alert.alert(
+            '🆔 Student ID Detected',
+            `Student ID: ${result.student_id}\nConfidence: ${result.confidence}%\n\n⚠️ Some digits may be incorrect. Please verify.`,
+            [
+              { text: 'Retry', onPress: resetForRetry },
+              { text: 'Edit Manually', onPress: () => {
+                setManualStudentId(result.student_id)
+                setShowManualEntry(true)
+              }},
+              { text: 'Confirm & Continue', onPress: () => {
+                setCurrentStep('answers')
+                resetForRetry()
+              }},
+            ]
+          )
+        } else {
+          setCurrentStep('answers')
+          Alert.alert(
+            '✅ Student ID Verified!',
+            `Student ID: ${result.student_id}\nConfidence: ${result.confidence}%\n\n${result.message}`,
+            [{ text: 'Continue to Answers', onPress: resetForRetry }]
+          )
+        }
+      } else if (currentStep === 'answers') {
+        setStepResults(prev => ({ ...prev, answers: { answers: result.answers, answered_count: result.answered_count } }))
+        setCurrentStep('complete')
+        
+        // Calculate score if answer key exists
+        let score = 0
+        const answerKey = exam.answer_key_json || []
+        if (answerKey.length > 0) {
+          result.answers.forEach((answer: string, idx: number) => {
+            if (answer && answerKey[idx] && answer.toUpperCase() === answerKey[idx].toUpperCase()) {
+              score++
+            }
+          })
+        }
+
+        setLastScanResult({
+          student_id: stepResults.student_id?.student_id,
+          answers: result.answers,
+          score,
+          total_questions: result.total_questions,
+          answered_count: result.answered_count,
+        })
+
+        Alert.alert(
+          '🎉 Scan Complete!',
+          `Student ID: ${stepResults.student_id?.student_id}\nAnswers Detected: ${result.answered_count}/${result.total_questions}\nScore: ${score}/${answerKey.length || '?'}`,
+          [
+            { text: 'View Details', onPress: () => setShowResultModal(true) },
+            { text: 'Save & Done', style: 'default', onPress: () => saveAndFinish(score) },
+          ]
+        )
+      }
+
+    } catch (error: any) {
+      console.error('Step processing error:', error)
+      Alert.alert(
+        'Processing Failed',
+        error.message || 'Unknown error',
+        [
+          { text: 'Cancel', onPress: () => navigation.goBack() },
+          { text: 'Retry', onPress: resetForRetry },
+        ]
+      )
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  // Save final results
+  async function saveAndFinish(score: number) {
+    try {
+      setProcessing(true)
+      setStatusMessage('Saving results...')
+
+      const { data: session } = await supabase.auth.getSession()
+      if (!session.session) {
+        throw new Error('Not authenticated')
+      }
+
+      // Upload the image first
       const imageToUpload = croppedImage || capturedImage!
-      
       const base64 = await FileSystem.readAsStringAsync(imageToUpload, {
         encoding: 'base64',
       })
+      
+      const timestamp = Date.now()
+      const fileName = `scan_${exam.id}_${timestamp}.jpg`
+      const filePath = `${exam.id}/${fileName}`
 
       const decode = (str: string) => {
         const binary = atob(str)
@@ -546,141 +723,57 @@ export default function ScannerScreen({ route, navigation }: any) {
 
       const imageBytes = decode(base64)
 
-      setStatusMessage('Uploading to server...')
-      
-      const { error: uploadError } = await supabase.storage
+      await supabase.storage
         .from('scan-images')
         .upload(filePath, imageBytes, {
           contentType: 'image/jpeg',
           upsert: false,
         })
 
-      if (uploadError) {
-        throw new Error(`Upload failed: ${uploadError.message}`)
-      }
-
-      setStatusMessage('Processing OMR...')
-
-      const { data: session } = await supabase.auth.getSession()
-      if (!session.session) {
-        throw new Error('Not authenticated')
-      }
-
-      const getWebApiUrl = () => {
-        // Force production API if flag is set
-        if (ALWAYS_USE_PRODUCTION_API) {
-          return PRODUCTION_API_URL
-        }
-        
-        // Production mode: Use Vercel URL
-        if (!isDevelopment) {
-          return PRODUCTION_API_URL
-        }
-        
-        // Development mode: Auto-detect local IP
-        const debuggerHost = Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost
-        if (debuggerHost) {
-          const host = debuggerHost.split(':').shift()
-          return `http://${host}:3000`
-        }
-        return 'http://localhost:3000'
-      }
-
-      const webApiUrl = getWebApiUrl()
-      console.log('Using API URL:', webApiUrl, ALWAYS_USE_PRODUCTION_API ? '(forced production)' : (isDevelopment ? '(dev mode)' : '(production mode)'))
-      
-      const response = await fetch(`${webApiUrl}/api/scans/process`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({
-          exam_id: exam.id,
-          image_path: filePath,
-          bubble_threshold: bubbleThreshold,
-        }),
+      // Save scan result to database
+      const { error: insertError } = await supabase.from('exam_results').insert({
+        exam_id: exam.id,
+        student_identifier: stepResults.student_id?.student_id || 'UNKNOWN',
+        answers_json: stepResults.answers?.answers || [],
+        score,
+        total_questions: exam.num_questions || exam.answer_key_json?.length || 0,
+        scan_image_path: filePath,
+        created_by: session.session.user.id,
       })
 
-      const result = await response.json()
-      
-      console.log('=== SCAN RESULT ===')
-      console.log('Success:', result.success)
-      console.log('Confidence:', result.confidence)
-      console.log('Student ID:', result.student_id)
-      console.log('Score:', result.score, '/', result.total_questions)
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || result.details || 'Processing failed')
+      if (insertError) {
+        console.error('Insert error:', insertError)
+        // Continue anyway - image is uploaded
       }
 
-      // Check if exam matches
-      if (result.metadata?.exam_code_hash && exam.exam_code_hash && 
-          result.metadata.exam_code_hash !== exam.exam_code_hash) {
-        Alert.alert(
-          'Wrong Exam Sheet',
-          `The scanned sheet is for a different exam.\n\nExpected: ${exam.name}`,
-          [{ text: 'OK', onPress: resetScanner }]
-        )
-        return
-      }
+      Alert.alert('✅ Saved!', 'Scan results saved successfully.')
+      navigation.goBack()
 
-      // Store result for display
-      setLastScanResult(result)
-
-      // Always show results, but warn if low confidence
-      if (result.confidence < 40) {
-        // Very low confidence - offer manual entry
-        Alert.alert(
-          '⚠️ Low Confidence Detection',
-          `Student ID: ${result.student_id || 'Not detected'}\nConfidence: ${result.confidence}%\n\nThe scan quality is too low. Would you like to enter data manually?`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: resetScanner },
-            { text: 'Use Anyway', onPress: () => setShowResultModal(true) },
-            { text: 'Manual Entry', onPress: () => {
-              setManualStudentId(result.student_id || '')
-              setShowManualEntry(true)
-            }}
-          ]
-        )
-      } else if (result.confidence < 70) {
-        // Medium confidence - show results but warn
-        Alert.alert(
-          '📋 Scan Results (Review Recommended)',
-          `Student ID: ${result.student_id || 'Unknown'}\nScore: ${result.score ?? 0}/${result.total_questions ?? exam.answer_key_json?.length ?? '?'}\nConfidence: ${result.confidence}%\n\nPlease verify the results are correct.`,
-          [
-            { text: 'Retry', onPress: resetScanner },
-            { text: 'View Details', onPress: () => setShowResultModal(true) },
-            { text: 'Accept', style: 'default', onPress: () => navigation.goBack() }
-          ]
-        )
-      } else {
-        // Good confidence - show success
-        Alert.alert(
-          '✅ Scan Complete!',
-          `Student ID: ${result.student_id}\nScore: ${result.score ?? 0}/${result.total_questions ?? exam.answer_key_json?.length ?? '?'}\nConfidence: ${result.confidence}%`,
-          [
-            { text: 'View Details', onPress: () => setShowResultModal(true) },
-            { text: 'Done', style: 'default', onPress: () => navigation.goBack() }
-          ]
-        )
-      }
     } catch (error: any) {
-      console.error('Processing error:', error)
-      Alert.alert(
-        'Processing Failed', 
-        error.message || 'Unknown error',
-        [
-          { text: 'Cancel', onPress: () => navigation.goBack() },
-          { text: 'Retry', onPress: resetScanner },
-          { text: 'Manual Entry', onPress: () => setShowManualEntry(true) }
-        ]
-      )
+      console.error('Save error:', error)
+      Alert.alert('Save Failed', error.message)
     } finally {
       setProcessing(false)
     }
   }
 
+  // Reset for retry (keep current step)
+  function resetForRetry() {
+    setCapturedImage(null)
+    setCroppedImage(null)
+    setProcessing(false)
+    setAutoCapturing(false)
+    setCountdown(null)
+    setPaperDetected(false)
+    setIsStable(false)
+    const stepInfo = getStepInfo(currentStep)
+    setStatusMessage(`Step ${stepInfo.number}: ${stepInfo.title}`)
+    resetStability()
+    resetDetectionStage()
+    if (scanMode === 'auto') startCornerAnalysis()
+  }
+
+  // Full reset (back to step 1)
   function resetScanner() {
     setCapturedImage(null)
     setCroppedImage(null)
@@ -689,10 +782,17 @@ export default function ScannerScreen({ route, navigation }: any) {
     setCountdown(null)
     setPaperDetected(false)
     setIsStable(false)
-    setStatusMessage('Position paper in frame')
+    setCurrentStep('qr')
+    setStepResults({})
+    setStatusMessage('Step 1: Scan QR Code')
     resetStability()
-    resetDetectionStage() // Reset the smooth detection stage
+    resetDetectionStage()
     if (scanMode === 'auto') startCornerAnalysis()
+  }
+
+  // Legacy processAndUpload - now uses step-based
+  async function processAndUpload() {
+    await processCurrentStep()
   }
 
   // Pick image from gallery for manual upload
@@ -709,15 +809,23 @@ export default function ScannerScreen({ route, navigation }: any) {
         const asset = result.assets[0]
         console.log('Image picked:', asset.width, 'x', asset.height)
         
-        // Set as captured image and process
+        // Set as captured image
         setCapturedImage(asset.uri)
-        setStatusMessage('Processing selected image...')
+        const stepInfo = getStepInfo(currentStep)
+        setStatusMessage(`Processing ${stepInfo.title}...`)
         
-        // Process the image directly
+        // Process using step-based approach
         if (asset.base64) {
-          await processImage(asset.uri, asset.base64)
+          // Store the base64 and trigger processing
+          await processCurrentStep()
         } else {
-          Alert.alert('Error', 'Could not read image data')
+          // Read base64 from URI
+          const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' })
+          if (base64) {
+            await processCurrentStep()
+          } else {
+            Alert.alert('Error', 'Could not read image data')
+          }
         }
       }
     } catch (error) {
@@ -731,7 +839,8 @@ export default function ScannerScreen({ route, navigation }: any) {
     setScanMode(newMode)
     cancelAutoCapture()
     resetStability()
-    setStatusMessage(newMode === 'auto' ? 'Position paper in frame' : 'Manual mode - tap to capture')
+    const stepInfo = getStepInfo(currentStep)
+    setStatusMessage(newMode === 'auto' ? `Auto: ${stepInfo.title}` : `Manual: ${stepInfo.title}`)
   }
 
   // Render corner marker
@@ -873,6 +982,42 @@ export default function ScannerScreen({ route, navigation }: any) {
 
             {/* Status and countdown */}
             <View style={styles.statusContainer}>
+              {/* Step Progress Indicator */}
+              <View style={styles.stepProgress}>
+                {(['qr', 'student_id', 'answers'] as ScanStep[]).map((step, index) => {
+                  const stepInfo = getStepInfo(step)
+                  const isComplete = 
+                    (step === 'qr' && stepResults.qr) ||
+                    (step === 'student_id' && stepResults.student_id) ||
+                    (step === 'answers' && stepResults.answers)
+                  const isCurrent = currentStep === step
+                  
+                  return (
+                    <View key={step} style={styles.stepItem}>
+                      <View style={[
+                        styles.stepCircle,
+                        isComplete && styles.stepCircleComplete,
+                        isCurrent && styles.stepCircleCurrent,
+                      ]}>
+                        <Text style={styles.stepCircleText}>
+                          {isComplete ? '✓' : stepInfo.number}
+                        </Text>
+                      </View>
+                      <Text style={[
+                        styles.stepLabel,
+                        isCurrent && styles.stepLabelCurrent,
+                      ]}>
+                        {step === 'qr' ? 'QR' : step === 'student_id' ? 'ID' : 'Ans'}
+                      </Text>
+                      {index < 2 && <View style={[
+                        styles.stepLine,
+                        isComplete && styles.stepLineComplete,
+                      ]} />}
+                    </View>
+                  )
+                })}
+              </View>
+
               <View style={[
                 styles.statusBadge,
                 paperDetected && styles.statusBadgeDetected,
@@ -1123,10 +1268,66 @@ const styles = StyleSheet.create({
   },
   statusContainer: {
     position: 'absolute',
-    top: '50%',
+    top: '45%',
     left: 0,
     right: 0,
     alignItems: 'center',
+  },
+  stepProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  stepCircleComplete: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  stepCircleCurrent: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
+  },
+  stepCircleText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  stepLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    marginLeft: 4,
+    marginRight: 8,
+  },
+  stepLabelCurrent: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  stepLine: {
+    width: 20,
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    marginRight: 8,
+  },
+  stepLineComplete: {
+    backgroundColor: '#10b981',
   },
   statusBadge: {
     backgroundColor: 'rgba(0,0,0,0.7)',
